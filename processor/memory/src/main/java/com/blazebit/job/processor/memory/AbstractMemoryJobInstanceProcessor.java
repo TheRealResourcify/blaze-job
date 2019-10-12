@@ -101,6 +101,8 @@ public abstract class AbstractMemoryJobInstanceProcessor<ID, T, I extends JobIns
      * @param processingResult The processing result
      * @return the identifier
      */
-    protected abstract ID getProcessingResultId(T processingResult);
+    protected ID getProcessingResultId(T processingResult) {
+        return null;
+    }
 
 }

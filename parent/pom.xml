@@ -99,7 +99,7 @@
                 <configuration>
                     <configLocation>blaze-job/checkstyle-config.xml</configLocation>
                     <suppressionsLocation>blaze-job/checkstyle-suppressions.xml</suppressionsLocation>
-                    <suppressionsFileJob>checkstyle.suppressions.file</suppressionsFileJob>
+                    <suppressionsFileExpression>checkstyle.suppressions.file</suppressionsFileExpression>
                     <consoleOutput>true</consoleOutput>
                     <skip>${skipCheckstyle}</skip>
                 </configuration>

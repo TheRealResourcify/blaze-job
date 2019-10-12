@@ -21,6 +21,12 @@
             <artifactId>blaze-actor-core-api</artifactId>
             <version>${version.blaze-notify-actor}</version>
         </dependency>
+        <dependency>
+            <groupId>${project.groupId}</groupId>
+            <artifactId>blaze-actor-core-impl</artifactId>
+            <version>${version.blaze-notify-actor}</version>
+            <scope>runtime</scope>
+        </dependency>
         <!-- Test dependencies -->
 		<dependency>
 			<groupId>junit</groupId>

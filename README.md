@@ -7,31 +7,29 @@
 
 Blaze-Job
 ==========
-Blaze-Job is a toolkit that can be used to build a custom job and predicate DSL based on blaze-domain with a strong focus on string and query serialization of jobs.
+Blaze-Job is an extendible toolkit for job scheduling with a strong focus on allowing efficient persistent job pipelines in a cluster environment.
 
 What is it?
 ===========
 
-Blaze-Job provides a common job AST that is enriched with blaze-domain types which enables string and query serialization. 
+Blaze-Job provides a lightweight job execution runtime built on top of [Blaze-Actor](https://github.com/Blazebit/blaze-actor) that can make use of a pluggable job storage.
+ 
+The job scheduler is partition and cluster aware and has the ability to reschedule jobs when temporary errors occur.
+There are two base implementations for job storages, an in-memory implementation and a JPA implementation that can be used for custom storage models.
+Job triggers can schedule jobs through a cron expression. Job instances support incremental or at once processing.
 
-The job AST in the core API module is supposed to be general purpose and supposed to cover mostly structural aspects.
-An job compiler that implements a syntax similar to the JPQL.Next job language is provided out of the box, but a custom syntax can be used by providing a custom compiler.
-The implementation provides support for an interpreter for jobs, given that the domain types have proper interpreters registered for the operations registered. 
-Blaze-Job comes with a persistence module that provides an interpreter and JPQL.Next rendering support to a string or Blaze-Persistence query builders for persistence related models.
-The _declarative_ submodule allows to define job related metadata via annotations on the domain model elements.
-
-In short, Blaze-Job allows you to have a custom DSL based on your own domain model that translates into queries for efficient database execution but also supports interpretation and serialization for storage.
+In short, Blaze-Job is a runtime that can be used with a custom job model that supports partitioning in a cluster environment.
 
 Features
 ==============
 
 Blaze-Job has support for
 
-* Make use of custom domain model in DSL via Blaze-Domain
-* Serialize jobs to string form for storage
-* Serialize jobs to jobs/predicates in Blaze-Persistence queries
-* Interpret jobs on custom objects
-* Full custom function support
+* Pluggable job model and job storage
+* Base implementations for in-memory or JPA based job storage
+* Recurring jobs through job triggers
+* Incremental processing of job instances
+* Cluster and partitioning support in the job scheduler
 
 How to use it?
 ==============
@@ -41,6 +39,7 @@ Blaze-Job is split up into different modules. We recommend that you define a ver
 ```xml
 <properties>
     <blaze-job.version>1.0.0-SNAPSHOT</blaze-job.version>
+    <blaze-actor.version>1.0.0-Alpha1</blaze-actor.version>
 </properties>
 ```
 
@@ -81,35 +80,109 @@ Blaze-Job Core module dependencies
 </dependency>
 ```
 
-Blaze-Job Declarative module dependencies
+Blaze-Job JPA module dependencies
 
 ```xml
 <dependency>
     <groupId>com.blazebit</groupId>
-    <artifactId>blaze-job-declarative-api</artifactId>
+    <artifactId>blaze-job-jpa-model</artifactId>
     <version>${blaze-job.version}</version>
     <scope>compile</scope>
 </dependency>
 <dependency>
     <groupId>com.blazebit</groupId>
-    <artifactId>blaze-job-declarative-impl</artifactId>
+    <artifactId>blaze-job-jpa-storage</artifactId>
     <version>${blaze-job.version}</version>
     <scope>runtime</scope>
 </dependency>
 ```
 
-Blaze-Job Persistence module dependencies
+Blaze-Job Memory module dependencies
 
 ```xml
 <dependency>
     <groupId>com.blazebit</groupId>
-    <artifactId>blaze-job-persistence</artifactId>
+    <artifactId>blaze-job-memory-model</artifactId>
     <version>${blaze-job.version}</version>
     <scope>compile</scope>
 </dependency>
 <dependency>
     <groupId>com.blazebit</groupId>
-    <artifactId>blaze-job-declarative-persistence</artifactId>
+    <artifactId>blaze-job-memory-storage</artifactId>
+    <version>${blaze-job.version}</version>
+    <scope>runtime</scope>
+</dependency>
+```
+
+Blaze-Job scheduler implementation for Blaze-Actor. Use either of the two, the Spring module if you are on Spring
+
+```xml
+<dependency>
+    <groupId>com.blazebit</groupId>
+    <artifactId>blaze-actor-scheduler-executor</artifactId>
+    <version>${blaze-actor.version}</version>
+    <scope>compile</scope>
+</dependency>
+<dependency>
+    <groupId>com.blazebit</groupId>
+    <artifactId>blaze-actor-scheduler-spring</artifactId>
+    <version>${blaze-actor.version}</version>
+    <scope>compile</scope>
+</dependency>
+```
+
+Blaze-Job Schedule support. Use either of the two, the Spring module if you are on Spring
+
+```xml
+<dependency>
+    <groupId>com.blazebit</groupId>
+    <artifactId>blaze-job-schedule-cron</artifactId>
+    <version>${blaze-job.version}</version>
+    <scope>runtime</scope>
+</dependency>
+<dependency>
+    <groupId>com.blazebit</groupId>
+    <artifactId>blaze-job-schedule-spring</artifactId>
+    <version>${blaze-job.version}</version>
+    <scope>runtime</scope>
+</dependency>
+```
+
+Blaze-Job Transaction support. Use either of the three, depending on the transaction API of the target environment
+
+```xml
+<dependency>
+    <groupId>com.blazebit</groupId>
+    <artifactId>blaze-job-transaction-jpa</artifactId>
+    <version>${blaze-job.version}</version>
+    <scope>runtime</scope>
+</dependency>
+<dependency>
+    <groupId>com.blazebit</groupId>
+    <artifactId>blaze-job-transaction-jta</artifactId>
+    <version>${blaze-job.version}</version>
+    <scope>runtime</scope>
+</dependency>
+<dependency>
+    <groupId>com.blazebit</groupId>
+    <artifactId>blaze-job-transaction-spring</artifactId>
+    <version>${blaze-job.version}</version>
+    <scope>runtime</scope>
+</dependency>
+```
+
+Blaze-Job Processor base implementations
+
+```xml
+<dependency>
+    <groupId>com.blazebit</groupId>
+    <artifactId>blaze-job-processor-hibernate-insert-select</artifactId>
+    <version>${blaze-job.version}</version>
+    <scope>compile</scope>
+</dependency>
+<dependency>
+    <groupId>com.blazebit</groupId>
+    <artifactId>blaze-job-processor-memory</artifactId>
     <version>${blaze-job.version}</version>
     <scope>compile</scope>
 </dependency>
@@ -120,90 +193,63 @@ Documentation
 
 Currently there is no documentation other than the Javadoc.
  
-Core quick-start
+Quick-start
 =================
 
-To work with Blaze-Job, a `JobServiceFactory` is needed which requires that a domain model is built first.  
+To work with Blaze-Job, one has to first setup a custom job model. For illustration purposes, we use the memory storage.  
 
 ```java
-DomainBuilder domainBuilder = Domain.getDefaultProvider().createDefaultBuilder();
-domainBuilder.createEntityType("Cat")
-    .addAttribute("name", String.class)
-    .addAttribute("age", Integer.class)
-  .build();
-DomainModel domain = domainBuilder.build();
-```
+public class MyJobInstance extends AbstractJobInstance<Long> {
 
-With that `DomainModel` a `JobServiceFactory` can be created and an job compiled.
+    private JobConfiguration jobConfiguration = new JobConfiguration();
 
-```java
-JobServiceFactory jobServiceFactory = Jobs.forModel(domain);
-JobCompiler compiler = jobServiceFactory.createCompiler();
-JobCompiler.Context context = compiler.createContext(Collections.singletonMap("c", domain.getType("Cat")));
-Job job = compiler.createJob("c.age", context);
-```
+    public MyJobInstance() {
+        setCreationTime(Instant.now());
+    }
 
-The job string is parsed, type checked and enriched with the result domain types.
-The metadata defined for domain types is then used internally to implement interpretation or serialization.
+    @Override
+    public Long getPartitionKey() {
+        return getId();
+    }
 
-Such a simple job isn't very interesting, but to go further, the definition of some basic types and their operators is necessary which is provided by the persistence module.
+    @Override
+    public JobConfiguration getJobConfiguration() {
+        return jobConfiguration;
+    }
 
-Declarative Persistence usage
-=================
-
-The persistence and declarative persistence modules allow to make use of some commonly used basic types and provide a wide set of builtin functions:
-
-```java
-@DomainType
-@EntityType(Cat.class)
-interface CatModel {
-  @EntityAttribute
-  String getName();
-  @EntityAttribute("AGE(birthday)")
-  Integer getAge();
+    @Override
+    public void onChunkSuccess(JobInstanceProcessingContext<?> processingContext) {
+    }
 }
 ```
 
-Assuming the domain model was already built, we could formulate a predicate:
+With that class in place, we can define a job context.
 
 ```java
-JobServiceFactory jobServiceFactory = Jobs.forModel(domain);
-JobCompiler compiler = jobServiceFactory.createCompiler();
-JobCompiler.Context context = compiler.createContext(
-    Collections.singletonMap("c", domain.getType("CatModel"))
-);
-Predicate predicate = compiler.createPredicate("c.age > 18", context);
+JobContext jobContext = JobContext.builder()
+    // Don't support job triggers here
+    .withJobProcessorFactory(JobProcessorFactory.of(((jobTrigger, context) -> {})))
+    // 
+    .withJobInstanceProcessorFactory(JobInstanceProcessorFactory.of(((jobInstance, context) -> {
+        return (jobInstance, context) -> {
+            System.out.println("Hello from job processor for: " + jobInstance);
+            return null;
+        };
+    })))
+    .withProperty(ExecutorServiceScheduler.EXECUTOR_SERVICE_PROPERTY, Executors.newScheduledThreadPool(2))
+    .createContext();
 ```
 
-The predicate could be evaluated against an object i.e. interpreted
+With this job context, every job instance that is scheduled will print to the console.
+To schedule a job instance, the job instance has to be configured and added to the job manager.
 
 ```java
-JobInterpreter interpreter = jobServiceFactory.createInterpreter();
-JobInterpreter.Context context = interpreter.createContext(
-    Collections.singletonMap("c", domain.getType("CatModel")),
-    Collections.singletonMap("c", new CatModelImpl("Cat 1", 19))
-);
-Boolean result = interpreter.evaluate(predicate, context);
+MyJobInstance jobInstance = new MyJobInstance();
+jobInstance.setScheduleTime(Instant.now());
+jobContext.getJobManager().addJobInstance(jobInstance);
 ```
 
-This would yield `true` as the age of the cat in the example is 19. This could also be serialized to a query
-
-```java
-CriteriaBuilder<Cat> criteriaBuilder = criteriaBuilderFactory.create(entityManager, Cat.class, "cat");
-JobSerializer<WhereBuilder> serializer = jobServiceFactory.createSerializer(WhereBuilder.class);
-JobSerializer.Context context = serializer.createContext(
-    Collections.singletonMap("c", "cat")
-);
-serializer.serializeTo(context, predicate, criteriaBuilder);
-```
-
-This will result in a query like the following
-
-```sql
-SELECT cat
-FROM Cat cat
-WHERE AGE(cat.birthday) > 18
-```
+The job is scheduled, executed and then marked as done.
 
 Licensing
 =========
