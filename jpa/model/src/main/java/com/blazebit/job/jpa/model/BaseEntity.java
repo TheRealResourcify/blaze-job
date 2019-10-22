@@ -16,10 +16,8 @@
 
 package com.blazebit.job.jpa.model;
 
-import javax.persistence.Basic;
 import javax.persistence.MappedSuperclass;
 import javax.persistence.Transient;
-import javax.persistence.Version;
 import java.io.Serializable;
 
 /**
@@ -34,7 +32,6 @@ public abstract class BaseEntity<ID> implements Serializable {
     private static final long serialVersionUID = 1L;
 
     private ID id;
-    private Long version;
 
     /**
      * Creates an empty base entity.
@@ -76,26 +73,6 @@ public abstract class BaseEntity<ID> implements Serializable {
      */
     public void setId(ID id) {
         this.id = id;
-    }
-
-    /**
-     * Returns the version of the entity.
-     *
-     * @return the version
-     */
-    @Version
-    @Basic(optional = false)
-    public Long getVersion() {
-        return version;
-    }
-
-    /**
-     * Sets the version of the entity.
-     *
-     * @param version The version
-     */
-    public void setVersion(Long version) {
-        this.version = version;
     }
 
     @Override

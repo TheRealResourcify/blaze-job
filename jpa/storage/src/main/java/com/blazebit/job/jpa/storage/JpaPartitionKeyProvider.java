@@ -27,8 +27,12 @@ import com.blazebit.job.spi.PartitionKeyProvider;
 
 import javax.persistence.EntityManager;
 import javax.persistence.metamodel.EntityType;
+import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.function.Function;
 
 /**
@@ -131,34 +135,77 @@ public class JpaPartitionKeyProvider implements PartitionKeyProvider {
 
         Collection<PartitionKey> jobTriggerPartitionKeys = new ArrayList<>();
         Collection<PartitionKey> jobInstancePartitionKeys = new ArrayList<>();
+        Map<EntityType<?>, List<EntityType<?>>> entitySubtypeMap = new HashMap<>();
         for (EntityType<?> entity : entityManager.getMetamodel().getEntities()) {
             Class<?> javaType = entity.getJavaType();
-            if (javaType != null) {
-                if (JobTrigger.class.isAssignableFrom(javaType)) {
-                    jobTriggerPartitionKeys.add(
-                        JpaPartitionKey.builder()
-                            .withName(entity.getName())
-                            .withJobInstanceType((Class<? extends JobInstance<?>>) javaType)
-                            .withIdAttributeName(jobTriggerIdAttributeName)
-                            .withScheduleAttributeName(jobTriggerScheduleAttributeName)
-                            .withPartitionKeyAttributeName(jobTriggerIdAttributeName)
-                            .withStateAttributeName(jobTriggerStateAttributeName)
-                            .withReadyStateValue(jobTriggerStateReadyValue)
-                            .build()
-                    );
-                } else if (JobInstance.class.isAssignableFrom(javaType)) {
-                    jobInstancePartitionKeys.add(
-                        JpaPartitionKey.builder()
-                            .withName(entity.getName())
-                            .withJobInstanceType((Class<? extends JobInstance<?>>) javaType)
-                            .withIdAttributeName(jobInstanceIdAttributeName)
-                            .withScheduleAttributeName(jobInstanceScheduleAttributeName)
-                            .withPartitionKeyAttributeName(jobInstancePartitionKeyAttributeName)
-                            .withStateAttributeName(jobInstanceStateAttributeName)
-                            .withReadyStateValue(jobInstanceStateReadyValue)
-                            .build()
-                    );
+            // We only query non-abstract entity types
+            if (javaType != null && !Modifier.isAbstract(javaType.getModifiers())) {
+                if (JobTrigger.class.isAssignableFrom(javaType) || JobInstance.class.isAssignableFrom(javaType)) {
+                    List<EntityType<?>> subtypes = new ArrayList<>();
+                    entitySubtypeMap.put(entity, subtypes);
+                    while (entity.getSupertype() instanceof EntityType<?>) {
+                        EntityType<?> supertype = (EntityType<?>) entity.getSupertype();
+                        Class<?> supertypeJavaType = supertype.getJavaType();
+                        if (supertypeJavaType != null && !Modifier.isAbstract(supertypeJavaType.getModifiers())) {
+                            List<EntityType<?>> superSubtypes = entitySubtypeMap.compute(supertype, (e, list) -> list == null ? new ArrayList<>() : list);
+                            superSubtypes.add(entity);
+                            if (subtypes != null) {
+                                superSubtypes.addAll(subtypes);
+                            }
+
+                            entity = supertype;
+                            subtypes = entitySubtypeMap.get(entity);
+                        } else {
+                            entity = supertype;
+                            if (subtypes.isEmpty()) {
+                                subtypes = entitySubtypeMap.get(entity);
+                            } else {
+                                // We propagate all subtypes up to non-abstract supertypes
+                                subtypes = new ArrayList<>(subtypes);
+                                subtypes.addAll(entitySubtypeMap.get(entity));
+                            }
+                        }
+                    }
                 }
+            }
+        }
+
+        for (Map.Entry<EntityType<?>, List<EntityType<?>>> entry : entitySubtypeMap.entrySet()) {
+            EntityType<?> entity = entry.getKey();
+            Class<?> javaType = entity.getJavaType();
+            Function<String, String> partitionKeyPredicateProvider;
+            if (entry.getValue().isEmpty()) {
+                partitionKeyPredicateProvider = null;
+            } else {
+                partitionKeyPredicateProvider = alias -> "TYPE(" + alias + ") = " + entity.getName();
+            }
+
+            if (JobTrigger.class.isAssignableFrom(javaType)) {
+                jobTriggerPartitionKeys.add(
+                    JpaPartitionKey.builder()
+                        .withName(entity.getName())
+                        .withJobInstanceType((Class<? extends JobInstance<?>>) javaType)
+                        .withPartitionPredicateProvider(partitionKeyPredicateProvider)
+                        .withIdAttributeName(jobTriggerIdAttributeName)
+                        .withScheduleAttributeName(jobTriggerScheduleAttributeName)
+                        .withPartitionKeyAttributeName(jobTriggerIdAttributeName)
+                        .withStateAttributeName(jobTriggerStateAttributeName)
+                        .withReadyStateValue(jobTriggerStateReadyValue)
+                        .build()
+                );
+            } else if (JobInstance.class.isAssignableFrom(javaType)) {
+                jobInstancePartitionKeys.add(
+                    JpaPartitionKey.builder()
+                        .withName(entity.getName())
+                        .withJobInstanceType((Class<? extends JobInstance<?>>) javaType)
+                        .withPartitionPredicateProvider(partitionKeyPredicateProvider)
+                        .withIdAttributeName(jobInstanceIdAttributeName)
+                        .withScheduleAttributeName(jobInstanceScheduleAttributeName)
+                        .withPartitionKeyAttributeName(jobInstancePartitionKeyAttributeName)
+                        .withStateAttributeName(jobInstanceStateAttributeName)
+                        .withReadyStateValue(jobInstanceStateReadyValue)
+                        .build()
+                );
             }
         }
         this.jobTriggerPartitionKeys = jobTriggerPartitionKeys;

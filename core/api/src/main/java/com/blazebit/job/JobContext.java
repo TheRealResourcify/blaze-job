@@ -733,7 +733,7 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
                     Collection<PartitionKey> instancePartitionKeys = this.partitionKeyProvider.getDefaultJobInstancePartitionKeys();
                     this.jobSchedulers = new HashMap<>(defaultTriggerPartitionKeys.size() + instancePartitionKeys.size());
                     for (PartitionKey instancePartitionKey : instancePartitionKeys) {
-                        JobScheduler jobInstanceScheduler = jobSchedulerFactory.createJobScheduler(this, actorContext, DEFAULT_JOB_INSTANCE_ACTOR_NAME, DEFAULT_JOB_INSTANCE_PROCESS_COUNT, instancePartitionKey);
+                        JobScheduler jobInstanceScheduler = jobSchedulerFactory.createJobScheduler(this, actorContext, DEFAULT_JOB_INSTANCE_ACTOR_NAME + "/" + instancePartitionKey, DEFAULT_JOB_INSTANCE_PROCESS_COUNT, instancePartitionKey);
                         jobSchedulers.put(instancePartitionKey, jobInstanceScheduler);
                     }
                 } else {

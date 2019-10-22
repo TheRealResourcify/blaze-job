@@ -90,6 +90,7 @@ public abstract class AbstractJobInstance<ID> extends BaseEntity<ID> implements 
     @NotNull
     @Override
     @Enumerated(EnumType.ORDINAL)
+    @Column(nullable = false)
     public JobInstanceState getState() {
         return state;
     }
