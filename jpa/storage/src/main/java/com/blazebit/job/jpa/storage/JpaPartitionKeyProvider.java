@@ -60,12 +60,12 @@ public class JpaPartitionKeyProvider implements PartitionKeyProvider {
     public static final String JOB_TRIGGER_STATE_ATTRIBUTE_NAME_PROPERTY = "job.jpa.storage.job_trigger_state_attribute_name";
     /**
      * Configuration property for the job trigger state ready value.
-     * The default value is "state".
+     * The default value is {@link JobInstanceState#NEW}.
      */
     public static final String JOB_TRIGGER_STATE_READY_VALUE_PROPERTY = "job.jpa.storage.job_trigger_state_ready_value";
     /**
      * Configuration property for the job instance id attribute name.
-     * The default value is {@link JobInstanceState#NEW}.
+     * The default value is "id".
      */
     public static final String JOB_INSTANCE_ID_ATTRIBUTE_NAME_PROPERTY = "job.jpa.storage.job_instance_id_attribute_name";
     /**
