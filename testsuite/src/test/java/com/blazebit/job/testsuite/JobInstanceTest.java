@@ -19,6 +19,7 @@ import com.blazebit.actor.ActorContext;
 import com.blazebit.actor.spi.ClusterNodeInfo;
 import com.blazebit.actor.spi.ClusterStateListener;
 import com.blazebit.actor.spi.ClusterStateManager;
+import com.blazebit.actor.spi.StateReturningEvent;
 import com.blazebit.job.JobContext;
 import com.blazebit.job.JobInstanceState;
 import com.blazebit.job.JobRateLimitException;
@@ -31,12 +32,25 @@ import com.blazebit.job.spi.TransactionSupport;
 import org.junit.Test;
 
 import java.io.Serializable;
-import java.time.*;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.Year;
+import java.time.ZoneOffset;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.*;
+import java.util.concurrent.ArrayBlockingQueue;
+import java.util.concurrent.BlockingQueue;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Consumer;
 
 import static org.junit.Assert.assertEquals;
@@ -399,6 +413,7 @@ public class JobInstanceTest extends AbstractJobTest {
 
         // WHEN
         clusterStateManager.setClusterSize(2);
+        clusterStateManager.setClusterPosition(1);
         clusterStateManager.fireClusterStateChanged();
         SimpleJobInstance jobInstance = new SimpleJobInstance();
         jobInstance.setState(JobInstanceState.NEW);
@@ -422,6 +437,7 @@ public class JobInstanceTest extends AbstractJobTest {
         // WHEN
         jobInstance.setState(JobInstanceState.NEW);
         clusterStateManager.setClusterSize(2);
+        clusterStateManager.setClusterPosition(1);
         clusterStateManager.fireClusterStateChanged();
 
         // THEN
@@ -460,12 +476,17 @@ public class JobInstanceTest extends AbstractJobTest {
         }
 
         @Override
-        public void fireEventExcludeSelf(Serializable event) {
+        public boolean isStandalone() {
+            return true;
+        }
+
+        @Override
+        public void fireEventExcludeSelf(Serializable event, boolean await) {
             // Noop because there is no cluster
         }
 
         @Override
-        public void fireEvent(Serializable event) {
+        public void fireEvent(Serializable event, boolean await) {
             java.util.function.Consumer<Class<?>> consumer = eventClass -> {
                 List<java.util.function.Consumer<Serializable>> consumers = listeners.get(eventClass);
                 if (consumers != null) {
@@ -479,6 +500,43 @@ public class JobInstanceTest extends AbstractJobTest {
                 visitInterfaces(consumer, clazz, visitedClasses);
                 clazz = clazz.getSuperclass();
             } while (clazz != null);
+        }
+
+        @Override
+        public <T> Map<ClusterNodeInfo, Future<T>> fireEvent(StateReturningEvent<T> event) {
+            fireEvent((Serializable) event, false);
+            T result = event.getResult();
+            return Collections.singletonMap(this, new Future<T>() {
+                @Override
+                public boolean cancel(boolean mayInterruptIfRunning) {
+                    return false;
+                }
+
+                @Override
+                public boolean isCancelled() {
+                    return false;
+                }
+
+                @Override
+                public boolean isDone() {
+                    return true;
+                }
+
+                @Override
+                public T get() throws InterruptedException, ExecutionException {
+                    return result;
+                }
+
+                @Override
+                public T get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
+                    return result;
+                }
+            });
+        }
+
+        @Override
+        public <T> Map<ClusterNodeInfo, Future<T>> fireEventExcludeSelf(StateReturningEvent<T> event) {
+            return null;
         }
 
         private void visitInterfaces(java.util.function.Consumer<Class<?>> consumer, Class<?> clazz, Set<Class<?>> visitedClasses) {

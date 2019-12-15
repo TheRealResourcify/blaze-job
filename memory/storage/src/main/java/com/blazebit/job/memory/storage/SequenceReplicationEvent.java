@@ -14,39 +14,35 @@
  * limitations under the License.
  */
 
-package com.blazebit.job;
+package com.blazebit.job.memory.storage;
+
+import java.io.Serializable;
 
 /**
- * The job instance states.
+ * An event for replicating sequence values.
  *
  * @author Christian Beikov
  * @since 1.0.0
  */
-public enum JobInstanceState {
+public class SequenceReplicationEvent implements Serializable {
+
+    private final long currentValue;
 
     /**
-     * A new, yet to be executed job instance.
+     * Creates a new sequence replication event.
+     *
+     * @param currentValue The current sequence value
      */
-    NEW,
-    /**
-     * A done job instance that doesn't need further processing.
-     */
-    DONE,
-    /**
-     * A failed job instance that doesn't need further processing.
-     */
-    FAILED,
-    /**
-     * A job instance that reached its deadline and doesn't need further processing.
-     */
-    DEADLINE_REACHED,
-    /**
-     * A job instance that reached its maximum defer count and doesn't need further processing.
-     */
-    DROPPED,
-    /**
-     * A job instance with that state is going to be remove during an update.
-     */
-    REMOVED;
+    public SequenceReplicationEvent(long currentValue) {
+        this.currentValue = currentValue;
+    }
 
+    /**
+     * Returns the current sequence value.
+     *
+     * @return the current sequence value
+     */
+    public long getCurrentValue() {
+        return currentValue;
+    }
 }

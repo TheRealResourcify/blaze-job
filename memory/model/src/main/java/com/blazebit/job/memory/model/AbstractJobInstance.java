@@ -28,10 +28,11 @@ import java.time.Instant;
  * @author Christian Beikov
  * @since 1.0.0
  */
-public abstract class AbstractJobInstance<ID> extends BaseEntity<ID> implements JobInstance<ID> {
+public abstract class AbstractJobInstance<ID> extends BaseEntity<ID> implements MemoryJobInstance<ID> {
 
     private static final long serialVersionUID = 1L;
 
+    private long version;
     private JobInstanceState state = JobInstanceState.NEW;
 
     private int deferCount;
@@ -77,6 +78,16 @@ public abstract class AbstractJobInstance<ID> extends BaseEntity<ID> implements 
     @Override
     public void markFailed(Throwable t) {
         setState(JobInstanceState.FAILED);
+    }
+
+    @Override
+    public long getVersion() {
+        return version;
+    }
+
+    @Override
+    public void setVersion(long version) {
+        this.version = version;
     }
 
     @Override

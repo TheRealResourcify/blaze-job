@@ -14,39 +14,38 @@
  * limitations under the License.
  */
 
-package com.blazebit.job;
+package com.blazebit.job.memory.model;
+
+import com.blazebit.job.JobInstance;
 
 /**
- * The job instance states.
+ * A memory job instance with a getter and setter for a version field.
  *
+ * @param <ID> The job instance id type
  * @author Christian Beikov
  * @since 1.0.0
  */
-public enum JobInstanceState {
+public interface MemoryJobInstance<ID> extends JobInstance<ID> {
 
     /**
-     * A new, yet to be executed job instance.
+     * Sets the given id.
+     *
+     * @param id The id
      */
-    NEW,
+    void setId(ID id);
+
     /**
-     * A done job instance that doesn't need further processing.
+     * Returns the version.
+     *
+     * @return the version
      */
-    DONE,
+    long getVersion();
+
     /**
-     * A failed job instance that doesn't need further processing.
+     * Sets the given version.
+     *
+     * @param version The version
      */
-    FAILED,
-    /**
-     * A job instance that reached its deadline and doesn't need further processing.
-     */
-    DEADLINE_REACHED,
-    /**
-     * A job instance that reached its maximum defer count and doesn't need further processing.
-     */
-    DROPPED,
-    /**
-     * A job instance with that state is going to be remove during an update.
-     */
-    REMOVED;
+    void setVersion(long version);
 
 }

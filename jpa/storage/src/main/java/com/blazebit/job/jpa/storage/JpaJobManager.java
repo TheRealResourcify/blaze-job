@@ -33,6 +33,7 @@ import com.blazebit.job.jpa.model.JpaTriggerBasedJobInstance;
 import com.blazebit.job.spi.TransactionSupport;
 
 import javax.persistence.EntityManager;
+import javax.persistence.Query;
 import javax.persistence.TypedQuery;
 import javax.persistence.metamodel.EntityType;
 import java.io.Serializable;
@@ -42,6 +43,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.function.Function;
 
 /**
  * A JPA based implementation of the {@link JobManager} interface.
@@ -257,21 +259,21 @@ public class JpaJobManager implements JobManager {
         String partitionKeyAttributeName = jpaPartitionKey.getPartitionKeyAttributeName();
         String scheduleAttributeName = jpaPartitionKey.getScheduleAttributeName();
         String statePredicate = jpaPartitionKey.getStatePredicate("e");
-        Object readyStateValue = jpaPartitionKey.getReadyStateValue();
+        Function<JobInstanceState, Object> stateValueMappingFunction = jpaPartitionKey.getStateValueMappingFunction();
         String joinFetches = jpaPartitionKey.getJoinFetches("e");
         TypedQuery<? extends JobInstance<?>> typedQuery = entityManager.createQuery(
             "SELECT e FROM " + jobInstanceType.getName() + " e " +
                 joinFetches + " " +
-                "WHERE " + statePredicate + " " +
+                "WHERE e." + scheduleAttributeName + " <= :now " +
                 (partitionPredicate.isEmpty() ? "" : "AND " + partitionPredicate + " ") +
                 (partitionCount > 1 ? "AND MOD(e." + partitionKeyAttributeName + ", " + partitionCount + ") = " + partition + " " : "") +
-                "AND e." + scheduleAttributeName + " <= :now " +
+                (statePredicate == null || statePredicate.isEmpty() ? "" : "AND " + statePredicate + " ") +
                 "ORDER BY e." + scheduleAttributeName + " ASC, e." + idAttributeName + " ASC",
             jobInstanceType
         );
         typedQuery.setParameter("now", clock.instant());
-        if (readyStateValue != null) {
-            typedQuery.setParameter("readyState", readyStateValue);
+        if (stateValueMappingFunction != null) {
+            typedQuery.setParameter("readyState", stateValueMappingFunction);
         }
         List<JobInstance<?>> jobInstances = (List<JobInstance<?>>) (List) typedQuery
             // TODO: lockMode for update? advisory locks?
@@ -298,17 +300,18 @@ public class JpaJobManager implements JobManager {
         String partitionKeyAttributeName = jpaPartitionKey.getPartitionKeyAttributeName();
         String scheduleAttributeName = jpaPartitionKey.getScheduleAttributeName();
         String statePredicate = jpaPartitionKey.getStatePredicate("e");
-        Object readyStateValue = jpaPartitionKey.getReadyStateValue();
+        Function<JobInstanceState, Object> stateValueMappingFunction = jpaPartitionKey.getStateValueMappingFunction();
         TypedQuery<Instant> typedQuery = entityManager.createQuery(
             "SELECT e." + scheduleAttributeName + " FROM " + jobInstanceType.getName() + " e " +
-                "WHERE " + statePredicate + " " +
+                "WHERE 1=1 " +
+                (statePredicate == null || statePredicate.isEmpty() ? "" : "AND " + statePredicate + " ") +
                 (partitionPredicate.isEmpty() ? "" : "AND " + partitionPredicate + " ") +
                 (partitionCount > 1 ? "AND MOD(e." + partitionKeyAttributeName + ", " + partitionCount + ") = " + partition + " " : "") +
                 "ORDER BY e." + scheduleAttributeName + " ASC, e." + idAttributeName + " ASC",
             Instant.class
         );
-        if (readyStateValue != null) {
-            typedQuery.setParameter("readyState", readyStateValue);
+        if (stateValueMappingFunction != null) {
+            typedQuery.setParameter("readyState", stateValueMappingFunction);
         }
 
         List<Instant> nextSchedule = typedQuery.setMaxResults(1).getResultList();
@@ -325,8 +328,50 @@ public class JpaJobManager implements JobManager {
         }
         if (!entityManager.contains(jobInstance)) {
             entityManager.merge(jobInstance);
+            if (jobInstance.getState() == JobInstanceState.REMOVED) {
+                entityManager.flush();
+                removeJobInstance(jobInstance);
+            }
+        } else if (jobInstance.getState() == JobInstanceState.REMOVED) {
+            removeJobInstance(jobInstance);
         }
 
         entityManager.flush();
+    }
+
+    @Override
+    public void removeJobInstance(JobInstance<?> jobInstance) {
+        entityManager.remove(jobInstance);
+    }
+
+    @Override
+    public int removeJobInstances(Set<JobInstanceState> states, Instant executionTimeOlderThan, PartitionKey partitionKey) {
+        JpaPartitionKey jpaPartitionKey = (JpaPartitionKey) partitionKey;
+        String stateExpression = jpaPartitionKey.getStateExpression("i");
+        if (stateExpression != null && !stateExpression.isEmpty() && !states.isEmpty()) {
+            StringBuilder sb = new StringBuilder();
+            sb.append("DELETE FROM ").append(partitionKey.getJobInstanceType().getName()).append(" i ")
+                .append("WHERE ").append(stateExpression).append(" IN (");
+            int i = 0;
+            int size = states.size();
+            for (; i != size; i++) {
+                sb.append("param").append(i).append(',');
+            }
+            sb.setCharAt(sb.length() - 1, ')');
+            if (executionTimeOlderThan != null) {
+                sb.append(" AND i.").append(jpaPartitionKey.getLastExecutionAttributeName()).append(" < :lastExecution");
+            }
+            Query query = entityManager.createQuery(sb.toString());
+            i = 0;
+            for (JobInstanceState state : states) {
+                query.setParameter("param" + i, jpaPartitionKey.getStateValueMappingFunction().apply(state));
+                i++;
+            }
+            if (executionTimeOlderThan != null) {
+                query.setParameter("lastExecution", executionTimeOlderThan);
+            }
+            return query.executeUpdate();
+        }
+        return 0;
     }
 }

@@ -14,7 +14,7 @@
         <dependency>
             <groupId>${project.groupId}</groupId>
             <artifactId>blaze-actor-core-api</artifactId>
-            <version>${version.blaze-notify-actor}</version>
+            <version>${version.blaze-actor}</version>
         </dependency>
         <!-- Test dependencies -->
 		<dependency>

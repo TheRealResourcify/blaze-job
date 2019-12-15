@@ -54,15 +54,20 @@ public class JpaPartitionKeyProvider implements PartitionKeyProvider {
      */
     public static final String JOB_TRIGGER_SCHEDULE_ATTRIBUTE_NAME_PROPERTY = "job.jpa.storage.job_trigger_schedule_attribute_name";
     /**
+     * Configuration property for the job trigger last execution time attribute name.
+     * The default value is "lastExecutionTime".
+     */
+    public static final String JOB_TRIGGER_LAST_EXECUTION_ATTRIBUTE_NAME_PROPERTY = "job.jpa.storage.job_trigger_last_execution_attribute_name";
+    /**
      * Configuration property for the job trigger state attribute name.
      * The default value is "state".
      */
     public static final String JOB_TRIGGER_STATE_ATTRIBUTE_NAME_PROPERTY = "job.jpa.storage.job_trigger_state_attribute_name";
     /**
-     * Configuration property for the job trigger state ready value.
-     * The default value is {@link JobInstanceState#NEW}.
+     * Configuration property for a mapping function <code>Function&lt;JobInstanceState, Object&gt;</code> from job trigger state to the actual model state.
+     * The default value is a function that just returns the passed in {@link JobInstanceState}.
      */
-    public static final String JOB_TRIGGER_STATE_READY_VALUE_PROPERTY = "job.jpa.storage.job_trigger_state_ready_value";
+    public static final String JOB_TRIGGER_STATE_VALUE_MAPPING_FUNCTION_PROPERTY = "job.jpa.storage.job_trigger_state_value_mapping_function";
     /**
      * Configuration property for the job instance id attribute name.
      * The default value is "id".
@@ -79,15 +84,20 @@ public class JpaPartitionKeyProvider implements PartitionKeyProvider {
      */
     public static final String JOB_INSTANCE_SCHEDULE_ATTRIBUTE_NAME_PROPERTY = "job.jpa.storage.job_instance_schedule_attribute_name";
     /**
+     * Configuration property for the job instance last execution time attribute name.
+     * The default value is "lastExecutionTime".
+     */
+    public static final String JOB_INSTANCE_LAST_EXECUTION_ATTRIBUTE_NAME_PROPERTY = "job.jpa.storage.job_instance_last_execution_attribute_name";
+    /**
      * Configuration property for the job instance state attribute name.
      * The default value is "state".
      */
     public static final String JOB_INSTANCE_STATE_ATTRIBUTE_NAME_PROPERTY = "job.jpa.storage.job_instance_state_attribute_name";
     /**
-     * Configuration property for the job instance state ready value.
-     * The default value is {@link JobInstanceState#NEW}.
+     * Configuration property for a mapping function <code>Function&lt;JobInstanceState, Object&gt;</code> from job instance state to the actual model state.
+     * The default value is a function that just returns the passed in {@link JobInstanceState}.
      */
-    public static final String JOB_INSTANCE_STATE_READY_VALUE_PROPERTY = "job.jpa.storage.job_instance_state_ready_value";
+    public static final String JOB_INSTANCE_STATE_VALUE_MAPPING_FUNCTION_PROPERTY = "job.jpa.storage.job_instance_state_value_mapping_function";
 
     private final Collection<PartitionKey> jobTriggerPartitionKeys;
     private final Collection<PartitionKey> jobInstancePartitionKeys;
@@ -103,32 +113,36 @@ public class JpaPartitionKeyProvider implements PartitionKeyProvider {
             serviceProvider.getService(EntityManager.class),
             configurationSource.getPropertyOrDefault(JOB_TRIGGER_ID_ATTRIBUTE_NAME_PROPERTY, String.class, Function.identity(), o -> "id"),
             configurationSource.getPropertyOrDefault(JOB_TRIGGER_SCHEDULE_ATTRIBUTE_NAME_PROPERTY, String.class, Function.identity(), o -> "scheduleTime"),
+            configurationSource.getPropertyOrDefault(JOB_TRIGGER_LAST_EXECUTION_ATTRIBUTE_NAME_PROPERTY, String.class, Function.identity(), o -> "lastExecutionTime"),
             configurationSource.getPropertyOrDefault(JOB_TRIGGER_STATE_ATTRIBUTE_NAME_PROPERTY, String.class, Function.identity(), o -> "state"),
-            configurationSource.getPropertyOrDefault(JOB_TRIGGER_STATE_READY_VALUE_PROPERTY, Object.class, null, o -> JobInstanceState.NEW),
+            configurationSource.getPropertyOrDefault(JOB_TRIGGER_STATE_VALUE_MAPPING_FUNCTION_PROPERTY, Function.class, null, o -> Function.identity()),
             configurationSource.getPropertyOrDefault(JOB_INSTANCE_ID_ATTRIBUTE_NAME_PROPERTY, String.class, Function.identity(), o -> "id"),
             configurationSource.getPropertyOrDefault(JOB_INSTANCE_PARTITION_KEY_ATTRIBUTE_NAME_PROPERTY, String.class, Function.identity(), o -> "id"),
             configurationSource.getPropertyOrDefault(JOB_INSTANCE_SCHEDULE_ATTRIBUTE_NAME_PROPERTY, String.class, Function.identity(), o -> "scheduleTime"),
+            configurationSource.getPropertyOrDefault(JOB_INSTANCE_LAST_EXECUTION_ATTRIBUTE_NAME_PROPERTY, String.class, Function.identity(), o -> "lastExecutionTime"),
             configurationSource.getPropertyOrDefault(JOB_INSTANCE_STATE_ATTRIBUTE_NAME_PROPERTY, String.class, Function.identity(), o -> "state"),
-            configurationSource.getPropertyOrDefault(JOB_INSTANCE_STATE_READY_VALUE_PROPERTY, Object.class, null, o -> JobInstanceState.NEW)
+            configurationSource.getPropertyOrDefault(JOB_INSTANCE_STATE_VALUE_MAPPING_FUNCTION_PROPERTY, Function.class, null, o -> Function.identity())
         );
     }
 
     /**
      * Creates a new partition key provider.
      *
-     * @param entityManager                        The entity manager
-     * @param jobTriggerIdAttributeName            The trigger id attribute name
-     * @param jobTriggerScheduleAttributeName      The trigger schedule attribute name
-     * @param jobTriggerStateAttributeName         The trigger state attribute name
-     * @param jobTriggerStateReadyValue            The trigger state ready value
-     * @param jobInstanceIdAttributeName           The job instance id attribute name
-     * @param jobInstancePartitionKeyAttributeName The job instance partition key attribute name
-     * @param jobInstanceScheduleAttributeName     The job instance schedule attribute name
-     * @param jobInstanceStateAttributeName        The job instance state attribute name
-     * @param jobInstanceStateReadyValue           The job instance state ready value
+     * @param entityManager                         The entity manager
+     * @param jobTriggerIdAttributeName             The trigger id attribute name
+     * @param jobTriggerScheduleAttributeName       The trigger schedule attribute name
+     * @param jobTriggerLastExecutionAttributeName  The trigger last execution attribute name
+     * @param jobTriggerStateAttributeName          The trigger state attribute name
+     * @param jobTriggerStateValueMapper            The trigger state value mapping function
+     * @param jobInstanceIdAttributeName            The job instance id attribute name
+     * @param jobInstancePartitionKeyAttributeName  The job instance partition key attribute name
+     * @param jobInstanceScheduleAttributeName      The job instance schedule attribute name
+     * @param jobInstanceLastExecutionAttributeName The job instance last execution attribute name
+     * @param jobInstanceStateAttributeName         The job instance state attribute name
+     * @param jobInstanceStateValueMapper           The job instance state value mapping function
      */
-    public JpaPartitionKeyProvider(EntityManager entityManager, String jobTriggerIdAttributeName, String jobTriggerScheduleAttributeName, String jobTriggerStateAttributeName, Object jobTriggerStateReadyValue,
-                                   String jobInstanceIdAttributeName, String jobInstancePartitionKeyAttributeName, String jobInstanceScheduleAttributeName, String jobInstanceStateAttributeName, Object jobInstanceStateReadyValue) {
+    public JpaPartitionKeyProvider(EntityManager entityManager, String jobTriggerIdAttributeName, String jobTriggerScheduleAttributeName, String jobTriggerLastExecutionAttributeName, String jobTriggerStateAttributeName, Function<JobInstanceState, Object> jobTriggerStateValueMapper,
+                                   String jobInstanceIdAttributeName, String jobInstancePartitionKeyAttributeName, String jobInstanceScheduleAttributeName, String jobInstanceLastExecutionAttributeName, String jobInstanceStateAttributeName, Function<JobInstanceState, Object> jobInstanceStateValueMapper) {
         if (entityManager == null) {
             throw new JobException("No entity manager given!");
         }
@@ -188,9 +202,10 @@ public class JpaPartitionKeyProvider implements PartitionKeyProvider {
                         .withPartitionPredicateProvider(partitionKeyPredicateProvider)
                         .withIdAttributeName(jobTriggerIdAttributeName)
                         .withScheduleAttributeName(jobTriggerScheduleAttributeName)
+                        .withLastExecutionAttributeName(jobTriggerLastExecutionAttributeName)
                         .withPartitionKeyAttributeName(jobTriggerIdAttributeName)
                         .withStateAttributeName(jobTriggerStateAttributeName)
-                        .withReadyStateValue(jobTriggerStateReadyValue)
+                        .withStateValueMappingFunction(jobTriggerStateValueMapper)
                         .build()
                 );
             } else if (JobInstance.class.isAssignableFrom(javaType)) {
@@ -201,9 +216,10 @@ public class JpaPartitionKeyProvider implements PartitionKeyProvider {
                         .withPartitionPredicateProvider(partitionKeyPredicateProvider)
                         .withIdAttributeName(jobInstanceIdAttributeName)
                         .withScheduleAttributeName(jobInstanceScheduleAttributeName)
+                        .withLastExecutionAttributeName(jobInstanceLastExecutionAttributeName)
                         .withPartitionKeyAttributeName(jobInstancePartitionKeyAttributeName)
                         .withStateAttributeName(jobInstanceStateAttributeName)
-                        .withReadyStateValue(jobInstanceStateReadyValue)
+                        .withStateValueMappingFunction(jobInstanceStateValueMapper)
                         .build()
                 );
             }

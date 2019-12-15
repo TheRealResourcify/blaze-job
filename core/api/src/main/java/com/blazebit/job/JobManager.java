@@ -18,6 +18,7 @@ package com.blazebit.job;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Set;
 
 /**
  * A manager for adding, updating and querying job instances.
@@ -40,6 +41,23 @@ public interface JobManager {
      * @param jobInstance The job instance to update
      */
     void updateJobInstance(JobInstance<?> jobInstance);
+
+    /**
+     * Removes the given job instance.
+     *
+     * @param jobInstance The job instance to remove
+     */
+    void removeJobInstance(JobInstance<?> jobInstance);
+
+    /**
+     * Removes job instances that are in one of the given states and where the last execution time is lower than the given one.
+     *
+     * @param states The states for which job instances to remove
+     * @param executionTimeOlderThan Job instance with a last execution lower than this instant are removed. May be <code>null</code>
+     * @param partitionKey The partition key
+     * @return the number of removed job instances
+     */
+    int removeJobInstances(Set<JobInstanceState> states, Instant executionTimeOlderThan, PartitionKey partitionKey);
 
     /**
      * Returns a schedule time ordered list of job instances that need to be processed for the given partition.

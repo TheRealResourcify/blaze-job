@@ -17,6 +17,7 @@
 package com.blazebit.job.jpa.model;
 
 import com.blazebit.job.JobInstance;
+import com.blazebit.job.JobInstanceState;
 import com.blazebit.job.PartitionKey;
 
 import java.util.ArrayList;
@@ -56,6 +57,13 @@ public interface JpaPartitionKey extends PartitionKey {
     String getScheduleAttributeName();
 
     /**
+     * Returns the attribute name of the last execution attribute of the entity type as given in {@link #getJobInstanceType()}.
+     *
+     * @return the attribute name of the last execution attribute
+     */
+    String getLastExecutionAttributeName();
+
+    /**
      * Returns the attribute name of the partition key attribute of the entity type as given in {@link #getJobInstanceType()}.
      *
      * @return the attribute name of the partition key attribute
@@ -71,12 +79,20 @@ public interface JpaPartitionKey extends PartitionKey {
     String getStatePredicate(String jobAlias);
 
     /**
+     * Returns the expression for the state of a job.
+     *
+     * @param jobAlias The FROM clause alias for the job
+     * @return The state JPQL expression or an empty string
+     */
+    String getStateExpression(String jobAlias);
+
+    /**
      * Returns the state value for ready jobs that must be bound in a query to the parameter name "readyState".
      * A <code>null</code> value means that no parameter should be bound.
      *
      * @return The ready state value of <code>null</code>
      */
-    Object getReadyStateValue();
+    Function<JobInstanceState, Object> getStateValueMappingFunction();
 
     /**
      * Returns the join fetches that should be applied to a query when fetching a job for this partition.
@@ -139,6 +155,14 @@ public interface JpaPartitionKey extends PartitionKey {
         JpaPartitionKeyBuilder withScheduleAttributeName(String scheduleAttributeName);
 
         /**
+         * Sets the given job last execution attribute name.
+         *
+         * @param lastExecutionAttributeName The job last execution attribute name
+         * @return this for chaining
+         */
+        JpaPartitionKeyBuilder withLastExecutionAttributeName(String lastExecutionAttributeName);
+
+        /**
          * Sets the given job partition key attribute name.
          *
          * @param partitionKeyAttributeName The job partition key attribute name
@@ -155,12 +179,12 @@ public interface JpaPartitionKey extends PartitionKey {
         JpaPartitionKeyBuilder withStateAttributeName(String stateAttributeName);
 
         /**
-         * Sets the given job ready state value.
+         * Sets the given state value mapping function.
          *
-         * @param readyStateValue The job ready state value
+         * @param stateValueMappingFunction The state value mapping function
          * @return this for chaining
          */
-        JpaPartitionKeyBuilder withReadyStateValue(Object readyStateValue);
+        JpaPartitionKeyBuilder withStateValueMappingFunction(Function<JobInstanceState, Object> stateValueMappingFunction);
 
         /**
          * Sets the given job attributes to fetch.
@@ -190,9 +214,10 @@ public interface JpaPartitionKey extends PartitionKey {
             Function<String, String> partitionPredicateProvider0;
             String idAttributeName0;
             String scheduleAttributeName0;
+            String lastExecutionAttributeName0;
             String partitionKeyAttributeName0;
             String stateAttributeName0;
-            Object readyStateValue0;
+            Function<JobInstanceState, Object> stateValueMappingFunction0;
             List<String> fetches0 = new ArrayList<>();
 
             @Override
@@ -226,6 +251,12 @@ public interface JpaPartitionKey extends PartitionKey {
             }
 
             @Override
+            public JpaPartitionKeyBuilder withLastExecutionAttributeName(String lastExecutionAttributeName) {
+                this.lastExecutionAttributeName0 = lastExecutionAttributeName;
+                return this;
+            }
+
+            @Override
             public JpaPartitionKeyBuilder withPartitionKeyAttributeName(String partitionKeyAttributeName) {
                 this.partitionKeyAttributeName0 = partitionKeyAttributeName;
                 return this;
@@ -238,8 +269,8 @@ public interface JpaPartitionKey extends PartitionKey {
             }
 
             @Override
-            public JpaPartitionKeyBuilder withReadyStateValue(Object readyStateValue) {
-                this.readyStateValue0 = readyStateValue;
+            public JpaPartitionKeyBuilder withStateValueMappingFunction(Function<JobInstanceState, Object> stateValueMappingFunction) {
+                this.stateValueMappingFunction0 = stateValueMappingFunction;
                 return this;
             }
 
@@ -257,9 +288,10 @@ public interface JpaPartitionKey extends PartitionKey {
                     private final Function<String, String> partitionPredicateProvider = partitionPredicateProvider0;
                     private final String idAttributeName = idAttributeName0;
                     private final String scheduleAttributeName = scheduleAttributeName0;
+                    private final String lastExecutionAttributeName = lastExecutionAttributeName0;
                     private final String partitionKeyAttributeName = partitionKeyAttributeName0;
                     private final String stateAttributeName = stateAttributeName0;
-                    private final Object readyStateValue = readyStateValue0;
+                    private final Function<JobInstanceState, Object> stateValueMappingFunction = stateValueMappingFunction0;
                     private final String[] fetches = fetches0.toArray(new String[fetches0.size()]);
 
                     @Override
@@ -283,6 +315,11 @@ public interface JpaPartitionKey extends PartitionKey {
                     }
 
                     @Override
+                    public String getLastExecutionAttributeName() {
+                        return lastExecutionAttributeName;
+                    }
+
+                    @Override
                     public String getPartitionKeyAttributeName() {
                         return partitionKeyAttributeName;
                     }
@@ -293,8 +330,13 @@ public interface JpaPartitionKey extends PartitionKey {
                     }
 
                     @Override
-                    public Object getReadyStateValue() {
-                        return readyStateValue;
+                    public String getStateExpression(String jobAlias) {
+                        return jobAlias + "." + stateAttributeName;
+                    }
+
+                    @Override
+                    public Function<JobInstanceState, Object> getStateValueMappingFunction() {
+                        return stateValueMappingFunction;
                     }
 
                     @Override

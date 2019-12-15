@@ -30,6 +30,7 @@ import com.blazebit.job.spi.TransactionSupport;
 
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
@@ -88,6 +89,21 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
      * @throws JobException if the job instance processor can't be created
      */
     <T extends JobInstance<?>> JobInstanceProcessor<?, T> getJobInstanceProcessor(T job);
+
+    /**
+     * Returns all partition keys.
+     *
+     * @return The list of all partition keys
+     */
+    Collection<PartitionKey> getPartitionKeys();
+
+    /**
+     * Returns the matching partition keys for the given job instance.
+     *
+     * @param jobInstance The job instance
+     * @return The list of matching partition keys
+     */
+    Collection<PartitionKey> getPartitionKeys(JobInstance<?> jobInstance);
 
     /**
      * Refreshes the job instance schedules for the given job instance.
@@ -731,6 +747,7 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
                 Collection<PartitionKey> defaultTriggerPartitionKeys = this.partitionKeyProvider.getDefaultTriggerPartitionKeys();
                 if (partitionKeyEntries.isEmpty()) {
                     Collection<PartitionKey> instancePartitionKeys = this.partitionKeyProvider.getDefaultJobInstancePartitionKeys();
+
                     this.jobSchedulers = new HashMap<>(defaultTriggerPartitionKeys.size() + instancePartitionKeys.size());
                     for (PartitionKey instancePartitionKey : instancePartitionKeys) {
                         JobScheduler jobInstanceScheduler = jobSchedulerFactory.createJobScheduler(this, actorContext, DEFAULT_JOB_INSTANCE_ACTOR_NAME + "/" + instancePartitionKey, DEFAULT_JOB_INSTANCE_PROCESS_COUNT, instancePartitionKey);
@@ -818,7 +835,13 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
                 }
             }
 
-            private List<PartitionKey> getPartitionKeys(JobInstance<?> jobInstance) {
+            @Override
+            public Collection<PartitionKey> getPartitionKeys() {
+                return Collections.unmodifiableSet(jobSchedulers.keySet());
+            }
+
+            @Override
+            public List<PartitionKey> getPartitionKeys(JobInstance<?> jobInstance) {
                 return jobInstanceClassToPartitionKeysMapping.computeIfAbsent(jobInstance.getClass(), (k) -> {
                     List<PartitionKey> v = new ArrayList<>(jobSchedulers.keySet().size());
                     for (PartitionKey partitionKey : jobSchedulers.keySet()) {
