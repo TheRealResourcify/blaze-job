@@ -39,7 +39,7 @@ Blaze-Job is split up into different modules. We recommend that you define a ver
 ```xml
 <properties>
     <blaze-job.version>1.0.0-Alpha3</blaze-job.version>
-    <blaze-actor.version>1.0.0-Alpha2</blaze-actor.version>
+    <blaze-actor.version>1.0.0-Alpha3</blaze-actor.version>
 </properties>
 ```
 
