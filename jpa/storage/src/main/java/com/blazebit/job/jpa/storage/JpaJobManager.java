@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 - 2019 Blazebit.
+ * Copyright 2018 - 2020 Blazebit.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -273,7 +273,7 @@ public class JpaJobManager implements JobManager {
         );
         typedQuery.setParameter("now", clock.instant());
         if (stateValueMappingFunction != null) {
-            typedQuery.setParameter("readyState", stateValueMappingFunction);
+            typedQuery.setParameter("readyState", stateValueMappingFunction.apply(JobInstanceState.NEW));
         }
         List<JobInstance<?>> jobInstances = (List<JobInstance<?>>) (List) typedQuery
             // TODO: lockMode for update? advisory locks?
@@ -311,7 +311,7 @@ public class JpaJobManager implements JobManager {
             Instant.class
         );
         if (stateValueMappingFunction != null) {
-            typedQuery.setParameter("readyState", stateValueMappingFunction);
+            typedQuery.setParameter("readyState", stateValueMappingFunction.apply(JobInstanceState.NEW));
         }
 
         List<Instant> nextSchedule = typedQuery.setMaxResults(1).getResultList();
