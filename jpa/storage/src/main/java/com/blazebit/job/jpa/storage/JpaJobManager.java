@@ -39,6 +39,8 @@ import javax.persistence.metamodel.EntityType;
 import java.io.Serializable;
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -199,7 +201,9 @@ public class JpaJobManager implements JobManager {
 
     private void addJobTrigger(JobTrigger jobTrigger) {
         if (jobTrigger.getJob().getId() == null) {
-            entityManager.persist(jobTrigger.getJob());
+            if (!entityManager.contains(jobTrigger.getJob())) {
+                entityManager.persist(jobTrigger.getJob());
+            }
             setJob(jobTrigger, jobTrigger.getJob());
         } else if (!entityManager.contains(jobTrigger.getJob())) {
             setJob(jobTrigger, findJob(getEntityClass(jobTrigger.getJob()), jobTrigger.getJob().getId()));
@@ -215,8 +219,10 @@ public class JpaJobManager implements JobManager {
         if (jobTrigger.getScheduleTime() == null) {
             jobTrigger.setScheduleTime(jobTrigger.getSchedule(jobContext).nextSchedule(Schedule.scheduleContext(clock.millis())));
         }
-        entityManager.persist(jobTrigger);
-        if (jobTrigger.getState() == JobInstanceState.NEW) {
+        if (!entityManager.contains(jobTrigger)) {
+            entityManager.persist(jobTrigger);
+        }
+        if (jobTrigger.getState() == JobInstanceState.NEW && !jobContext.isScheduleRefreshedOnly()) {
             jobContext.getTransactionSupport().registerPostCommitListener(() -> {
                 jobContext.refreshJobInstanceSchedules(jobTrigger);
             });
@@ -239,8 +245,10 @@ public class JpaJobManager implements JobManager {
                 setTrigger(jpaTriggerBasedJobInstance, findJobTrigger(getEntityClass(trigger), trigger.getId()));
             }
         }
-        entityManager.persist(jobInstance);
-        if (jobInstance.getState() == JobInstanceState.NEW) {
+        if (!entityManager.contains(jobInstance)) {
+            entityManager.persist(jobInstance);
+        }
+        if (jobInstance.getState() == JobInstanceState.NEW && !jobContext.isScheduleRefreshedOnly()) {
             jobContext.getTransactionSupport().registerPostCommitListener(() -> {
                 jobContext.refreshJobInstanceSchedules(jobInstance);
             });
@@ -248,7 +256,16 @@ public class JpaJobManager implements JobManager {
     }
 
     @Override
-    public List<JobInstance<?>> getJobInstancesToProcess(int partition, int partitionCount, int limit, PartitionKey partitionKey) {
+    public List<JobInstance<?>> getJobInstancesToProcess(int partition, int partitionCount, int limit, PartitionKey partitionKey, Set<JobInstance<?>> jobInstancesToInclude) {
+        List<Object> ids = new ArrayList<>();
+        if (jobInstancesToInclude != null) {
+            for (JobInstance<?> jobInstance : jobInstancesToInclude) {
+                ids.add(jobInstance.getId());
+            }
+            if (ids.isEmpty()) {
+                return Collections.emptyList();
+            }
+        }
         if (!(partitionKey instanceof JpaPartitionKey)) {
             throw new IllegalArgumentException("The given partition key does not implement JpaPartitionKey: " + partitionKey);
         }
@@ -261,6 +278,7 @@ public class JpaJobManager implements JobManager {
         String statePredicate = jpaPartitionKey.getStatePredicate("e");
         Function<JobInstanceState, Object> stateValueMappingFunction = jpaPartitionKey.getStateValueMappingFunction();
         String joinFetches = jpaPartitionKey.getJoinFetches("e");
+        Instant now = clock.instant();
         TypedQuery<? extends JobInstance<?>> typedQuery = entityManager.createQuery(
             "SELECT e FROM " + jobInstanceType.getName() + " e " +
                 joinFetches + " " +
@@ -268,12 +286,16 @@ public class JpaJobManager implements JobManager {
                 (partitionPredicate.isEmpty() ? "" : "AND " + partitionPredicate + " ") +
                 (partitionCount > 1 ? "AND MOD(e." + partitionKeyAttributeName + ", " + partitionCount + ") = " + partition + " " : "") +
                 (statePredicate == null || statePredicate.isEmpty() ? "" : "AND " + statePredicate + " ") +
+                (ids.isEmpty() ? "" : "AND e." + idAttributeName + " IN :ids ") +
                 "ORDER BY e." + scheduleAttributeName + " ASC, e." + idAttributeName + " ASC",
             jobInstanceType
         );
-        typedQuery.setParameter("now", clock.instant());
+        typedQuery.setParameter("now", now);
         if (stateValueMappingFunction != null) {
             typedQuery.setParameter("readyState", stateValueMappingFunction.apply(JobInstanceState.NEW));
+        }
+        if (!ids.isEmpty()) {
+            typedQuery.setParameter("ids", ids);
         }
         List<JobInstance<?>> jobInstances = (List<JobInstance<?>>) (List) typedQuery
             // TODO: lockMode for update? advisory locks?
@@ -292,7 +314,16 @@ public class JpaJobManager implements JobManager {
     }
 
     @Override
-    public Instant getNextSchedule(int partition, int partitionCount, PartitionKey partitionKey) {
+    public Instant getNextSchedule(int partition, int partitionCount, PartitionKey partitionKey, Set<JobInstance<?>> jobInstancesToInclude) {
+        List<Object> ids = new ArrayList<>();
+        if (jobInstancesToInclude != null) {
+            for (JobInstance<?> jobInstance : jobInstancesToInclude) {
+                ids.add(jobInstance.getId());
+            }
+            if (ids.isEmpty()) {
+                return null;
+            }
+        }
         Class<? extends JobInstance<?>> jobInstanceType = partitionKey.getJobInstanceType();
         JpaPartitionKey jpaPartitionKey = (JpaPartitionKey) partitionKey;
         String partitionPredicate = jpaPartitionKey.getPartitionPredicate("e");
@@ -301,17 +332,22 @@ public class JpaJobManager implements JobManager {
         String scheduleAttributeName = jpaPartitionKey.getScheduleAttributeName();
         String statePredicate = jpaPartitionKey.getStatePredicate("e");
         Function<JobInstanceState, Object> stateValueMappingFunction = jpaPartitionKey.getStateValueMappingFunction();
+
         TypedQuery<Instant> typedQuery = entityManager.createQuery(
             "SELECT e." + scheduleAttributeName + " FROM " + jobInstanceType.getName() + " e " +
                 "WHERE 1=1 " +
                 (statePredicate == null || statePredicate.isEmpty() ? "" : "AND " + statePredicate + " ") +
                 (partitionPredicate.isEmpty() ? "" : "AND " + partitionPredicate + " ") +
                 (partitionCount > 1 ? "AND MOD(e." + partitionKeyAttributeName + ", " + partitionCount + ") = " + partition + " " : "") +
+                (ids.isEmpty() ? "" : "AND e." + idAttributeName + " IN :ids") +
                 "ORDER BY e." + scheduleAttributeName + " ASC, e." + idAttributeName + " ASC",
             Instant.class
         );
         if (stateValueMappingFunction != null) {
             typedQuery.setParameter("readyState", stateValueMappingFunction.apply(JobInstanceState.NEW));
+        }
+        if (!ids.isEmpty()) {
+            typedQuery.setParameter("ids", ids);
         }
 
         List<Instant> nextSchedule = typedQuery.setMaxResults(1).getResultList();
@@ -337,6 +373,11 @@ public class JpaJobManager implements JobManager {
         }
 
         entityManager.flush();
+        if (jobInstance.getState() == JobInstanceState.NEW && !jobContext.isScheduleRefreshedOnly()) {
+            jobContext.getTransactionSupport().registerPostCommitListener(() -> {
+                jobContext.refreshJobInstanceSchedules(jobInstance);
+            });
+        }
     }
 
     @Override

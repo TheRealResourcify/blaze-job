@@ -45,6 +45,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.Callable;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -72,6 +74,7 @@ public class JobSchedulerImpl implements JobScheduler, ClusterStateListener {
     private final PartitionKey partitionKey;
     private final int processCount;
     private final AtomicLong earliestKnownSchedule = new AtomicLong(Long.MAX_VALUE);
+    private final ConcurrentMap<JobInstance<?>, Boolean> jobInstancesToSchedule = new ConcurrentHashMap<>();
     private volatile ClusterNodeInfo clusterNodeInfo;
     private volatile boolean closed;
 
@@ -97,7 +100,7 @@ public class JobSchedulerImpl implements JobScheduler, ClusterStateListener {
     public void onClusterStateChanged(ClusterNodeInfo clusterNodeInfo) {
         this.clusterNodeInfo = clusterNodeInfo;
         if (!closed) {
-            Instant nextSchedule = jobManager.getNextSchedule(clusterNodeInfo.getClusterPosition(), clusterNodeInfo.getClusterSize(), partitionKey);
+            Instant nextSchedule = jobManager.getNextSchedule(clusterNodeInfo.getClusterPosition(), clusterNodeInfo.getClusterSize(), partitionKey, jobContext.isScheduleRefreshedOnly() ? jobInstancesToSchedule.keySet() : null);
             if (nextSchedule == null) {
                 resetEarliestKnownSchedule();
             } else {
@@ -114,12 +117,18 @@ public class JobSchedulerImpl implements JobScheduler, ClusterStateListener {
         }
     }
 
+    @Override
+    public void reschedule(JobInstance<?> jobInstance) {
+        jobInstancesToSchedule.put(jobInstance, Boolean.TRUE);
+        actorContext.getActorManager().rescheduleActor(actorName, 0);
+    }
+
     private long rescan(long earliestNewSchedule) {
         if (!closed) {
             if (earliestNewSchedule == 0) {
                 // This is special. We want to recheck schedules, no matter what
                 ClusterNodeInfo clusterNodeInfo = this.clusterNodeInfo;
-                Instant nextSchedule = jobManager.getNextSchedule(clusterNodeInfo.getClusterPosition(), clusterNodeInfo.getClusterSize(), partitionKey);
+                Instant nextSchedule = jobManager.getNextSchedule(clusterNodeInfo.getClusterPosition(), clusterNodeInfo.getClusterSize(), partitionKey, jobContext.isScheduleRefreshedOnly() ? jobInstancesToSchedule.keySet() : null);
                 // No new schedules available
                 if (nextSchedule == null) {
                     resetEarliestKnownSchedule();
@@ -192,7 +201,7 @@ public class JobSchedulerImpl implements JobScheduler, ClusterStateListener {
         public ActorRunResult call() throws Exception {
             JobManager jobManager = jobContext.getJobManager();
             ClusterNodeInfo clusterNodeInfo = JobSchedulerImpl.this.clusterNodeInfo;
-            List<JobInstance<?>> jobInstancesToProcess = jobManager.getJobInstancesToProcess(clusterNodeInfo.getClusterPosition(), clusterNodeInfo.getClusterSize(), processCount, partitionKey);
+            List<JobInstance<?>> jobInstancesToProcess = jobManager.getJobInstancesToProcess(clusterNodeInfo.getClusterPosition(), clusterNodeInfo.getClusterSize(), processCount, partitionKey, jobContext.isScheduleRefreshedOnly() ? jobInstancesToSchedule.keySet() : null);
             int size = jobInstancesToProcess.size();
             if (size == 0) {
                 return ActorRunResult.suspend();
@@ -200,8 +209,8 @@ public class JobSchedulerImpl implements JobScheduler, ClusterStateListener {
             Instant earliestNewSchedule = Instant.MAX;
             List<JobInstanceExecution> jobInstanceExecutions = new ArrayList<>(size);
             for (int i = 0; i < size; i++) {
-                Instant now = clock.instant();
                 JobInstance<?> jobInstance = jobInstancesToProcess.get(i);
+                Instant now = clock.instant();
                 MutableJobInstanceProcessingContext jobProcessingContext = new MutableJobInstanceProcessingContext(jobContext, partitionKey, processCount);
                 jobProcessingContext.setPartitionCount(clusterNodeInfo.getClusterSize());
                 jobProcessingContext.setPartitionId(clusterNodeInfo.getClusterPosition());
@@ -229,7 +238,7 @@ public class JobSchedulerImpl implements JobScheduler, ClusterStateListener {
                             if (jobInstanceProcessor.isTransactional()) {
                                 f = new SyncJobInstanceProcessorFuture(jobInstanceProcessor, jobInstance, jobProcessingContext);
                             } else {
-                                f = scheduler.submit(() -> jobInstanceProcessor.process(jobInstance, jobProcessingContext));
+                                f = scheduler.submit(new SpecialThrowingCallable(jobInstanceProcessor, jobInstance, jobProcessingContext));
                             }
                             jobInstanceExecutions.add(new JobInstanceExecution(jobInstance, deferCount, scheduleContext, jobProcessingContext, f));
                             future = true;
@@ -258,11 +267,17 @@ public class JobSchedulerImpl implements JobScheduler, ClusterStateListener {
                 } catch (Throwable t) {
                     LOG.log(Level.SEVERE, "An error occurred in the job scheduler", t);
                     jobInstance.markFailed(t);
+                    if (jobContext.isScheduleRefreshedOnly()) {
+                        jobInstancesToSchedule.remove(jobInstance);
+                    }
                     jobContext.forEachJobInstanceListeners(new JobInstanceErrorListenerConsumer(jobInstance, jobProcessingContext));
                 } finally {
                     if (!future) {
                         jobInstance.setLastExecutionTime(lastExecutionTime);
                         jobManager.updateJobInstance(jobInstance);
+                        if (jobContext.isScheduleRefreshedOnly() && jobInstance.getState() != JobInstanceState.NEW) {
+                            jobInstancesToSchedule.remove(jobInstance);
+                        }
                     }
                 }
             }
@@ -314,7 +329,12 @@ public class JobSchedulerImpl implements JobScheduler, ClusterStateListener {
                     }
                     jobContext.forEachJobInstanceListeners(new JobInstanceSuccessListenerConsumer(jobInstance, jobProcessingContext));
                 } catch (ExecutionException ex) {
-                    Throwable t = ex.getCause();
+                    Throwable t;
+                    if (ex.getCause() instanceof CallableThrowable) {
+                        t = ex.getCause().getCause();
+                    } else {
+                        t = ex.getCause();
+                    }
                     jobInstance.setLastExecutionTime(Instant.ofEpochMilli(scheduleContext.getLastExecutionTime()));
                     if (t instanceof JobRateLimitException) {
                         JobRateLimitException e = (JobRateLimitException) t;
@@ -359,6 +379,9 @@ public class JobSchedulerImpl implements JobScheduler, ClusterStateListener {
                 } finally {
                     if (success) {
                         jobManager.updateJobInstance(jobInstance);
+                    }
+                    if (jobContext.isScheduleRefreshedOnly() && jobInstance.getState() != JobInstanceState.NEW) {
+                        jobInstancesToSchedule.remove(jobInstance);
                     }
                 }
             }
@@ -420,6 +443,42 @@ public class JobSchedulerImpl implements JobScheduler, ClusterStateListener {
             }
             // NOTE: we don't need to update earliestKnownNotificationSchedule when rescheduling immediately
             return result;
+        }
+    }
+
+    private static class SpecialThrowingCallable implements Callable<Object> {
+        private final JobInstanceProcessor jobInstanceProcessor;
+        private final JobInstance<?> jobInstance;
+        private final MutableJobInstanceProcessingContext jobProcessingContext;
+
+        public SpecialThrowingCallable(JobInstanceProcessor jobInstanceProcessor, JobInstance<?> jobInstance, MutableJobInstanceProcessingContext jobProcessingContext) {
+            this.jobInstanceProcessor = jobInstanceProcessor;
+            this.jobInstance = jobInstance;
+            this.jobProcessingContext = jobProcessingContext;
+        }
+
+        @Override
+        public Object call() throws Exception {
+            try {
+                return jobInstanceProcessor.process(jobInstance, jobProcessingContext);
+            } catch (Exception ex) {
+                CallableThrowable.doThrow(ex);
+                return null;
+            }
+        }
+    }
+
+    // We need this special Throwable wrapper for exceptions,
+    // as scheduled callables that throw exceptions are handled differently in some containers(Wildfly)
+    // Wildfly will just log out the error and throw a different exception rather than propagating the error correctly to the Future
+    // Since we want the error, we have to wrap it in a Throwable which could normally not be thrown, to trick the container
+    private static class CallableThrowable extends Throwable {
+        public CallableThrowable(Throwable cause) {
+            super(cause);
+        }
+
+        private static <T extends Throwable> void doThrow(Throwable e) throws T {
+            throw (T) new CallableThrowable(e);
         }
     }
 

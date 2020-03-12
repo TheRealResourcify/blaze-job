@@ -135,6 +135,13 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
     void forEachJobInstanceListeners(Consumer<JobInstanceListener> jobInstanceListenerConsumer);
 
     /**
+     * Returns whether to schedule only refreshed job instances or all.
+     *
+     * @return whether to schedule only refreshed job instances or all
+     */
+    boolean isScheduleRefreshedOnly();
+
+    /**
      * Stops the job context.
      * After this method finished no further jobs are scheduled but there may still be running jobs.
      */
@@ -188,6 +195,7 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
         private JobInstanceProcessorFactory jobInstanceProcessorFactory;
         private PartitionKeyProviderFactory partitionKeyProviderFactory;
         private PartitionKeyProvider partitionKeyProvider;
+        private boolean scheduleRefreshedOnly;
         private final Map<PartitionKey, Integer> partitionKeys = new HashMap<>();
         private final List<JobTriggerListener> jobTriggerListeners = new ArrayList<>();
         private final List<JobInstanceListener> jobInstanceListeners = new ArrayList<>();
@@ -295,7 +303,8 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
                     getJobTriggerListeners(),
                     getJobInstanceListeners(),
                     properties,
-                    serviceMap
+                    serviceMap,
+                    isScheduleRefreshedOnly()
             );
         }
 
@@ -615,6 +624,26 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
         }
 
         /**
+         * Returns whether to schedule only refreshed job instances or all.
+         *
+         * @return whether to schedule only refreshed job instances or all
+         */
+        public boolean isScheduleRefreshedOnly() {
+            return scheduleRefreshedOnly;
+        }
+
+        /**
+         * Sets whether to schedule only refreshed job instances or all.
+         *
+         * @param scheduleRefreshedOnly whether to schedule only refreshed job instances or all
+         * @return this for chaining
+         */
+        public T withScheduleRefreshedOnly(boolean scheduleRefreshedOnly) {
+            this.scheduleRefreshedOnly = scheduleRefreshedOnly;
+            return (T) this;
+        }
+
+        /**
          * Returns the configured properties.
          *
          * @return the configured properties
@@ -710,6 +739,7 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
             private final JobInstanceListener[] jobInstanceListeners;
             private final Map<String, Object> properties;
             private final Map<Class<?>, Object> serviceMap;
+            private final boolean scheduleRefreshedOnly;
 
             /**
              * Creates a job context from the given configuration.
@@ -727,15 +757,17 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
              * @param jobInstanceListeners The job instance listeners
              * @param properties The properties
              * @param serviceMap The service map
+             * @param scheduleRefreshedOnly Whether to schedule only refreshed job instances
              */
             protected DefaultJobContext(TransactionSupport transactionSupport, JobManagerFactory jobManagerFactory, ActorContext actorContext, ScheduleFactory scheduleFactory,
                                         JobSchedulerFactory jobSchedulerFactory, JobProcessorFactory jobProcessorFactory, JobInstanceProcessorFactory jobInstanceProcessorFactory,
                                         Map<PartitionKey, Integer> partitionKeyEntries, PartitionKeyProvider partitionKeyProvider, List<JobTriggerListener> jobTriggerListeners, List<JobInstanceListener> jobInstanceListeners,
-                                        Map<String, Object> properties, Map<Class<?>, Object> serviceMap) {
+                                        Map<String, Object> properties, Map<Class<?>, Object> serviceMap, boolean scheduleRefreshedOnly) {
                 this.transactionSupport = transactionSupport;
                 this.scheduleFactory = scheduleFactory;
                 this.jobProcessorFactory = jobProcessorFactory;
                 this.jobInstanceProcessorFactory = jobInstanceProcessorFactory;
+                this.scheduleRefreshedOnly = scheduleRefreshedOnly;
                 this.properties = new HashMap<>(properties);
                 this.serviceMap = new HashMap<>(serviceMap);
                 this.jobManager = jobManagerFactory.createJobManager(this);
@@ -785,6 +817,11 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
             }
 
             @Override
+            public boolean isScheduleRefreshedOnly() {
+                return scheduleRefreshedOnly;
+            }
+
+            @Override
             public Object getProperty(String property) {
                 return properties.get(property);
             }
@@ -830,8 +867,14 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
                 }
                 long earliestNewSchedule = jobInstance.getScheduleTime().toEpochMilli();
                 List<PartitionKey> partitionKeys = getPartitionKeys(jobInstance);
-                for (int i = 0; i < partitionKeys.size(); i++) {
-                    jobSchedulers.get(partitionKeys.get(i)).refreshSchedules(earliestNewSchedule);
+                if (isScheduleRefreshedOnly()) {
+                    for (int i = 0; i < partitionKeys.size(); i++) {
+                        jobSchedulers.get(partitionKeys.get(i)).reschedule(jobInstance);
+                    }
+                } else {
+                    for (int i = 0; i < partitionKeys.size(); i++) {
+                        jobSchedulers.get(partitionKeys.get(i)).refreshSchedules(earliestNewSchedule);
+                    }
                 }
             }
 

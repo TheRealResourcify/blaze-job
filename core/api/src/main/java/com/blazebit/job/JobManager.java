@@ -66,9 +66,10 @@ public interface JobManager {
      * @param partitionCount The partition count
      * @param limit The amount of job instances to return at most
      * @param partitionKey The partition key
+     * @param jobInstancesToInclude Job instances to include if part of the partition, regardless of the limit
      * @return The list of job instances
      */
-    List<JobInstance<?>> getJobInstancesToProcess(int partition, int partitionCount, int limit, PartitionKey partitionKey);
+    List<JobInstance<?>> getJobInstancesToProcess(int partition, int partitionCount, int limit, PartitionKey partitionKey, Set<JobInstance<?>> jobInstancesToInclude);
 
     /**
      * Returns the next schedule at which the given partition must process job instances.
@@ -76,7 +77,8 @@ public interface JobManager {
      * @param partition The partition number
      * @param partitionCount The partition count
      * @param partitionKey The partition key
+     * @param jobInstancesToInclude The job instance for which to find the next schedule
      * @return The next schedule
      */
-    Instant getNextSchedule(int partition, int partitionCount, PartitionKey partitionKey);
+    Instant getNextSchedule(int partition, int partitionCount, PartitionKey partitionKey, Set<JobInstance<?>> jobInstancesToInclude);
 }

@@ -15,6 +15,8 @@
  */
 package com.blazebit.job.spi;
 
+import com.blazebit.job.JobInstance;
+
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -46,6 +48,13 @@ public interface JobScheduler {
      * @param earliestNewSchedule The newest schedule
      */
     void refreshSchedules(long earliestNewSchedule);
+
+    /**
+     * Tell the scheduler to reschedule the given job instance.
+     *
+     * @param jobInstance The job instance to reschedule
+     */
+    void reschedule(JobInstance<?> jobInstance);
 
     /**
      * Stops the job scheduler.

@@ -31,7 +31,9 @@ import com.blazebit.job.memory.model.MemoryJobInstance;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -42,6 +44,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 /**
  * An in-memory implementation of the {@link JobManager} interface.
@@ -333,32 +336,57 @@ public class MemoryJobManager implements JobManager {
         }
         replicate(memoryJobInstance, false);
         jobInstances.put(id, memoryJobInstance);
-        if (memoryJobInstance.getState() == JobInstanceState.NEW) {
+        if (memoryJobInstance.getState() == JobInstanceState.NEW && !jobContext.isScheduleRefreshedOnly()) {
             jobContext.refreshJobInstanceSchedules(memoryJobInstance);
         }
     }
 
     @Override
-    public List<JobInstance<?>> getJobInstancesToProcess(int partition, int partitionCount, int limit, PartitionKey partitionKey) {
+    public List<JobInstance<?>> getJobInstancesToProcess(int partition, int partitionCount, int limit, PartitionKey partitionKey, Set<JobInstance<?>> jobInstancesToInclude) {
+        Stream<MemoryJobInstance<?>> limitedStream = streamJobInstances(partition, partitionCount, partitionKey).limit(limit);
+        if (jobInstancesToInclude != null) {
+            Set<JobInstance<?>> jobInstances = new HashSet<>(jobInstancesToInclude);
+            if (jobInstances.isEmpty()) {
+                return Collections.emptyList();
+            } else {
+                return Stream.concat(
+                    streamJobInstances(partition, partitionCount, partitionKey).filter(jobInstances::contains),
+                    limitedStream
+                ).collect(Collectors.toList());
+            }
+        } else {
+            return limitedStream.collect(Collectors.toList());
+        }
+    }
+
+    private Stream<MemoryJobInstance<?>> streamJobInstances(int partition, int partitionCount, PartitionKey partitionKey) {
         return jobInstances.values().stream()
             .filter(i -> i.getState() == JobInstanceState.NEW
                 && i.getScheduleTime().toEpochMilli() <= clock.millis()
                 && (partitionCount == 1 || (i.getPartitionKey() % partitionCount) == partition)
                 && partitionKey.matches(i)
             )
-            .sorted(Comparator.comparing(JobInstance::getScheduleTime))
-            .limit(limit)
-            .collect(Collectors.toList());
+            .sorted(Comparator.comparing(JobInstance::getScheduleTime));
     }
 
     @Override
-    public Instant getNextSchedule(int partition, int partitionCount, PartitionKey partitionKey) {
-        return jobInstances.values().stream()
+    public Instant getNextSchedule(int partition, int partitionCount, PartitionKey partitionKey, Set<JobInstance<?>> jobInstancesToInclude) {
+        Stream<MemoryJobInstance<?>> jobInstanceStream = jobInstances.values().stream()
             .filter(i -> i.getState() == JobInstanceState.NEW
                 && (partitionCount == 1 || (i.getPartitionKey() % partitionCount) == partition)
                 && partitionKey.matches(i)
-            )
-            .sorted(Comparator.comparing(JobInstance::getScheduleTime))
+            );
+
+        if (jobInstancesToInclude != null) {
+            Set<JobInstance<?>> jobInstances = new HashSet<>(jobInstancesToInclude);
+            if (jobInstances.isEmpty()) {
+                return null;
+            } else {
+                jobInstanceStream = jobInstanceStream.filter(jobInstances::contains);
+            }
+        }
+
+        return jobInstanceStream.sorted(Comparator.comparing(JobInstance::getScheduleTime))
             .map(JobInstance::getScheduleTime)
             .findFirst()
             .orElse(null);
@@ -378,6 +406,9 @@ public class MemoryJobManager implements JobManager {
             removeJobInstance(jobInstance);
         } else {
             replicate(memoryJobInstance, false);
+        }
+        if (memoryJobInstance.getState() == JobInstanceState.NEW && !jobContext.isScheduleRefreshedOnly()) {
+            jobContext.refreshJobInstanceSchedules(memoryJobInstance);
         }
     }
 
