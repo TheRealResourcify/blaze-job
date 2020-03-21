@@ -14,47 +14,25 @@
  * limitations under the License.
  */
 
-package com.blazebit.job.memory.model;
+package com.blazebit.job.view.model;
 
 import com.blazebit.job.JobInstance;
 import com.blazebit.job.JobInstanceProcessingContext;
 import com.blazebit.job.JobInstanceState;
+import com.blazebit.persistence.view.PrePersist;
 
 import java.time.Instant;
 
 /**
- * An abstract implementation of the {@link JobInstance} interface.
+ * An abstract entity view implementing the {@link JobInstance} interface.
  *
  * @param <ID> The job instance id type
  * @author Christian Beikov
  * @since 1.0.0
  */
-public abstract class AbstractJobInstance<ID> extends BaseEntity<ID> implements MemoryJobInstance<ID> {
+public abstract class AbstractJobInstance<ID> implements JobInstance<ID>, IdHolderView<ID> {
 
     private static final long serialVersionUID = 1L;
-
-    private long version;
-    private JobInstanceState state = JobInstanceState.NEW;
-
-    private int deferCount;
-    private Instant scheduleTime;
-    private Instant creationTime;
-    private Instant lastExecutionTime;
-
-    /**
-     * Creates an empty job instance.
-     */
-    protected AbstractJobInstance() {
-    }
-
-    /**
-     * Creates a job instance with the given id.
-     *
-     * @param id The job instance id
-     */
-    protected AbstractJobInstance(ID id) {
-        super(id);
-    }
 
     @Override
     public void incrementDeferCount() {
@@ -82,74 +60,36 @@ public abstract class AbstractJobInstance<ID> extends BaseEntity<ID> implements 
     }
 
     @Override
-    public long getVersion() {
-        return version;
-    }
-
-    @Override
-    public void setVersion(long version) {
-        this.version = version;
-    }
-
-    @Override
-    public JobInstanceState getState() {
-        return state;
-    }
+    public abstract JobConfigurationView getJobConfiguration();
 
     /**
      * Sets the given state.
      *
      * @param state The state
      */
-    public void setState(JobInstanceState state) {
-        this.state = state;
-    }
-
-    @Override
-    public int getDeferCount() {
-        return deferCount;
-    }
+    abstract void setState(JobInstanceState state);
 
     /**
      * Sets the given defer count.
      *
      * @param deferCount The defer count
      */
-    public void setDeferCount(int deferCount) {
-        this.deferCount = deferCount;
-    }
-
-    @Override
-    public Instant getScheduleTime() {
-        return scheduleTime;
-    }
-
-    @Override
-    public void setScheduleTime(Instant scheduleTime) {
-        this.scheduleTime = scheduleTime;
-    }
-
-    @Override
-    public Instant getCreationTime() {
-        return creationTime;
-    }
+    public abstract void setDeferCount(int deferCount);
 
     /**
      * Sets the given creation time.
      *
      * @param creationTime The creation time
      */
-    public void setCreationTime(Instant creationTime) {
-        this.creationTime = creationTime;
-    }
+    public abstract void setCreationTime(Instant creationTime);
 
-    @Override
-    public Instant getLastExecutionTime() {
-        return lastExecutionTime;
-    }
-
-    @Override
-    public void setLastExecutionTime(Instant lastExecutionTime) {
-        this.lastExecutionTime = lastExecutionTime;
+    /**
+     * A {@link PrePersist} method that sets the creation time if necessary.
+     */
+    @PrePersist
+    protected void onPersist() {
+        if (getCreationTime() == null) {
+            setCreationTime(Instant.now());
+        }
     }
 }

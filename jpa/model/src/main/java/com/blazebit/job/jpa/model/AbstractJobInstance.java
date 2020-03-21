@@ -16,6 +16,7 @@
 
 package com.blazebit.job.jpa.model;
 
+import com.blazebit.job.JobInstanceProcessingContext;
 import com.blazebit.job.JobInstanceState;
 
 import javax.persistence.Column;
@@ -68,22 +69,22 @@ public abstract class AbstractJobInstance<ID> extends BaseEntity<ID> implements 
     }
 
     @Override
-    public void markDeadlineReached() {
+    public void markDeadlineReached(JobInstanceProcessingContext<?> jobProcessingContext) {
         setState(JobInstanceState.DEADLINE_REACHED);
     }
 
     @Override
-    public void markDropped() {
+    public void markDropped(JobInstanceProcessingContext<?> jobProcessingContext) {
         setState(JobInstanceState.DROPPED);
     }
 
     @Override
-    public void markDone(Object result) {
+    public void markDone(JobInstanceProcessingContext<?> jobProcessingContext, Object result) {
         setState(JobInstanceState.DONE);
     }
 
     @Override
-    public void markFailed(Throwable t) {
+    public void markFailed(JobInstanceProcessingContext<?> jobProcessingContext, Throwable t) {
         setState(JobInstanceState.FAILED);
     }
 

@@ -21,6 +21,7 @@ import com.blazebit.actor.spi.ClusterStateListener;
 import com.blazebit.actor.spi.ClusterStateManager;
 import com.blazebit.actor.spi.StateReturningEvent;
 import com.blazebit.job.JobContext;
+import com.blazebit.job.JobInstanceProcessingContext;
 import com.blazebit.job.JobInstanceState;
 import com.blazebit.job.JobRateLimitException;
 import com.blazebit.job.JobTemporaryException;
@@ -263,8 +264,8 @@ public class JobInstanceTest extends AbstractJobTest {
         this.jobContext = builder().withService(Clock.class, clock).createContext();
         SimpleJobInstance jobInstance = new SimpleJobInstance() {
             @Override
-            public void markDeferred(Instant newScheduleTime) {
-                super.markDeferred(newScheduleTime);
+            public void markDeferred(JobInstanceProcessingContext<?> jobProcessingContext, Instant newScheduleTime) {
+                super.markDeferred(jobProcessingContext, newScheduleTime);
                 latch.countDown();
             }
         };

@@ -135,32 +135,35 @@ public interface JobInstance<ID> {
      * Marks the given job instance as done and passes the last job instance processor execution result.
      * After this method, {@link #getState()} should return {@link JobInstanceState#DONE}.
      *
+     * @param processingContext The processing context
      * @param result The last job instance processor execution result
      */
-    void markDone(Object result);
+    void markDone(JobInstanceProcessingContext<?> processingContext, Object result);
 
     /**
      * Marks the given job instance as failed and passes the last job instance processor execution exception.
      * After this method, {@link #getState()} should return {@link JobInstanceState#FAILED}.
      *
+     * @param processingContext The processing context
      * @param t The job instance processor execution exception
      */
-    void markFailed(Throwable t);
+    void markFailed(JobInstanceProcessingContext<?> processingContext, Throwable t);
 
     /**
      * Marks the given job instance as deferred and sets a new schedule time.
      * This might happen when attempting a job instance processor execution outside of
      * the configured {@link JobConfiguration#getExecutionTimeFrames()}.
      * This method should increment the defer count, set the new schedule time
-     * and call {@link #markDropped()} if the {@link JobConfiguration#getMaximumDeferCount()} is reached.
+     * and call {@link #markDropped(JobInstanceProcessingContext)} if the {@link JobConfiguration#getMaximumDeferCount()} is reached.
      *
+     * @param processingContext The processing context
      * @param newScheduleTime The new schedule time
      */
-    default void markDeferred(Instant newScheduleTime) {
+    default void markDeferred(JobInstanceProcessingContext<?> processingContext, Instant newScheduleTime) {
         incrementDeferCount();
         int maximumDeferCount = getJobConfiguration().getMaximumDeferCount();
         if (maximumDeferCount > -1 && getDeferCount() > maximumDeferCount) {
-            markDropped();
+            markDropped(processingContext);
         }
         setScheduleTime(newScheduleTime);
     }
@@ -168,12 +171,16 @@ public interface JobInstance<ID> {
     /**
      * Marks the given job instance as deadline reached which happens when a configured {@link JobConfiguration#getDeadline()} is reached.
      * After this method, {@link #getState()} should return {@link JobInstanceState#DEADLINE_REACHED}.
+     *
+     * @param processingContext The processing context
      */
-    void markDeadlineReached();
+    void markDeadlineReached(JobInstanceProcessingContext<?> processingContext);
 
     /**
      * Marks the given job instance as dropped which happens when a configured {@link JobConfiguration#getMaximumDeferCount()} is reached.
      * After this method, {@link #getState()} should return {@link JobInstanceState#DROPPED}.
+     *
+     * @param processingContext The processing context
      */
-    void markDropped();
+    void markDropped(JobInstanceProcessingContext<?> processingContext);
 }

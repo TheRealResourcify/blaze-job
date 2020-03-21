@@ -97,6 +97,23 @@ Blaze-Job JPA module dependencies
 </dependency>
 ```
 
+Blaze-Job Entity-View module dependencies
+
+```xml
+<dependency>
+    <groupId>com.blazebit</groupId>
+    <artifactId>blaze-job-entity-view-model</artifactId>
+    <version>${blaze-job.version}</version>
+    <scope>compile</scope>
+</dependency>
+<dependency>
+    <groupId>com.blazebit</groupId>
+    <artifactId>blaze-job-entity-view-storage</artifactId>
+    <version>${blaze-job.version}</version>
+    <scope>runtime</scope>
+</dependency>
+```
+
 Blaze-Job Memory module dependencies
 
 ```xml

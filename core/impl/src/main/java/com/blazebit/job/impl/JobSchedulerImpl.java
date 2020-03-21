@@ -226,7 +226,7 @@ public class JobSchedulerImpl implements JobScheduler, ClusterStateListener {
                 try {
                     Instant deadline = jobInstance.getJobConfiguration().getDeadline();
                     if (deadline != null && deadline.compareTo(now) <= 0) {
-                        jobInstance.markDeadlineReached();
+                        jobInstance.markDeadlineReached(jobProcessingContext);
                         jobContext.forEachJobInstanceListeners(new JobInstanceErrorListenerConsumer(jobInstance, jobProcessingContext));
                     } else {
                         Set<? extends TimeFrame> executionTimeFrames = jobInstance.getJobConfiguration().getExecutionTimeFrames();
@@ -238,6 +238,7 @@ public class JobSchedulerImpl implements JobScheduler, ClusterStateListener {
                             if (jobInstanceProcessor.isTransactional()) {
                                 f = new SyncJobInstanceProcessorFuture(jobInstanceProcessor, jobInstance, jobProcessingContext);
                             } else {
+                                jobInstance.setLastExecutionTime(Instant.now());
                                 f = scheduler.submit(new SpecialThrowingCallable(jobInstanceProcessor, jobInstance, jobProcessingContext));
                             }
                             jobInstanceExecutions.add(new JobInstanceExecution(jobInstance, deferCount, scheduleContext, jobProcessingContext, f));
@@ -248,13 +249,13 @@ public class JobSchedulerImpl implements JobScheduler, ClusterStateListener {
                                 if (LOG.isLoggable(Level.FINEST)) {
                                     LOG.log(Level.FINEST, "Dropping job instance: " + jobInstance);
                                 }
-                                jobInstance.markDropped();
+                                jobInstance.markDropped(jobProcessingContext);
                                 jobContext.forEachJobInstanceListeners(new JobInstanceErrorListenerConsumer(jobInstance, jobProcessingContext));
                             } else {
                                 if (LOG.isLoggable(Level.FINEST)) {
                                     LOG.log(Level.FINEST, "Deferring job instance to " + nextSchedule);
                                 }
-                                jobInstance.markDeferred(nextSchedule);
+                                jobInstance.markDeferred(jobProcessingContext, nextSchedule);
                                 if (jobInstance.getState() == JobInstanceState.DROPPED) {
                                     jobContext.forEachJobInstanceListeners(new JobInstanceErrorListenerConsumer(jobInstance, jobProcessingContext));
                                 }
@@ -266,14 +267,13 @@ public class JobSchedulerImpl implements JobScheduler, ClusterStateListener {
                     }
                 } catch (Throwable t) {
                     LOG.log(Level.SEVERE, "An error occurred in the job scheduler", t);
-                    jobInstance.markFailed(t);
+                    jobInstance.markFailed(jobProcessingContext, t);
                     if (jobContext.isScheduleRefreshedOnly()) {
                         jobInstancesToSchedule.remove(jobInstance);
                     }
                     jobContext.forEachJobInstanceListeners(new JobInstanceErrorListenerConsumer(jobInstance, jobProcessingContext));
                 } finally {
                     if (!future) {
-                        jobInstance.setLastExecutionTime(lastExecutionTime);
                         jobManager.updateJobInstance(jobInstance);
                         if (jobContext.isScheduleRefreshedOnly() && jobInstance.getState() != JobInstanceState.NEW) {
                             jobInstancesToSchedule.remove(jobInstance);
@@ -293,7 +293,6 @@ public class JobSchedulerImpl implements JobScheduler, ClusterStateListener {
                 boolean success = true;
                 try {
                     Object lastProcessed = future.get();
-                    jobInstance.setLastExecutionTime(Instant.ofEpochMilli(scheduleContext.getLastExecutionTime()));
                     jobProcessingContext.setLastProcessed(lastProcessed);
                     scheduleContext.setLastCompletionTime(System.currentTimeMillis());
 
@@ -325,7 +324,7 @@ public class JobSchedulerImpl implements JobScheduler, ClusterStateListener {
                     }
 
                     if (jobInstance.getState() != JobInstanceState.DONE) {
-                        jobInstance.markDone(lastProcessed);
+                        jobInstance.markDone(jobProcessingContext, lastProcessed);
                     }
                     jobContext.forEachJobInstanceListeners(new JobInstanceSuccessListenerConsumer(jobInstance, jobProcessingContext));
                 } catch (ExecutionException ex) {
@@ -335,7 +334,6 @@ public class JobSchedulerImpl implements JobScheduler, ClusterStateListener {
                     } else {
                         t = ex.getCause();
                     }
-                    jobInstance.setLastExecutionTime(Instant.ofEpochMilli(scheduleContext.getLastExecutionTime()));
                     if (t instanceof JobRateLimitException) {
                         JobRateLimitException e = (JobRateLimitException) t;
                         LOG.log(Level.FINEST, "Deferring job instance due to rate limit", e);
@@ -369,7 +367,7 @@ public class JobSchedulerImpl implements JobScheduler, ClusterStateListener {
                         long transactionTimeout = 60_000L;
                         transactionSupport.transactional(jobContext, transactionTimeout, true, () -> {
                             jobContext.forEachJobInstanceListeners(new JobInstanceErrorListenerConsumer(jobInstance, jobProcessingContext));
-                            jobInstance.markFailed(t);
+                            jobInstance.markFailed(jobProcessingContext, t);
                             jobManager.updateJobInstance(jobInstance);
                             return null;
                         }, t2 -> {
@@ -575,6 +573,7 @@ public class JobSchedulerImpl implements JobScheduler, ClusterStateListener {
 
             done = true;
             try {
+                jobInstance.setLastExecutionTime(Instant.now());
                 return result = jobInstanceProcessor.process(jobInstance, processingContext);
             } catch (Exception e) {
                 throw new ExecutionException(exception = e);

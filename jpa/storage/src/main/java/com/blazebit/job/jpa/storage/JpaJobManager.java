@@ -324,6 +324,9 @@ public class JpaJobManager implements JobManager {
                 return null;
             }
         }
+        if (!(partitionKey instanceof JpaPartitionKey)) {
+            throw new IllegalArgumentException("The given partition key does not implement JpaPartitionKey: " + partitionKey);
+        }
         Class<? extends JobInstance<?>> jobInstanceType = partitionKey.getJobInstanceType();
         JpaPartitionKey jpaPartitionKey = (JpaPartitionKey) partitionKey;
         String partitionPredicate = jpaPartitionKey.getPartitionPredicate("e");
@@ -357,7 +360,7 @@ public class JpaJobManager implements JobManager {
     @Override
     public void updateJobInstance(JobInstance<?> jobInstance) {
         if (jobInstance.getJobConfiguration().getMaximumDeferCount() > jobInstance.getDeferCount()) {
-            jobInstance.markDropped();
+            jobInstance.markDropped(new SimpleJobInstanceProcessingContext(jobContext, jobInstance));
         }
         if (!entityManager.isJoinedToTransaction()) {
             entityManager.joinTransaction();

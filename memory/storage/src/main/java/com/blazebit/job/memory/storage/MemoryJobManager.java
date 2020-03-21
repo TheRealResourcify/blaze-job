@@ -400,7 +400,7 @@ public class MemoryJobManager implements JobManager {
         MemoryJobInstance<?> memoryJobInstance = (MemoryJobInstance<?>) jobInstance;
         memoryJobInstance.setVersion(memoryJobInstance.getVersion() + 1L);
         if (jobInstance.getJobConfiguration().getMaximumDeferCount() > jobInstance.getDeferCount()) {
-            jobInstance.markDropped();
+            jobInstance.markDropped(new SimpleJobInstanceProcessingContext(jobContext, jobInstance));
         }
         if (jobInstance.getState() == JobInstanceState.REMOVED) {
             removeJobInstance(jobInstance);
