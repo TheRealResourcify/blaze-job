@@ -16,6 +16,7 @@
 
 package com.blazebit.job.view.model;
 
+import java.io.Serializable;
 import java.util.Collection;
 import java.util.Iterator;
 
@@ -26,7 +27,7 @@ import java.util.Iterator;
  * @author Christian Beikov
  * @since 1.0.0
  */
-public class DelegatingCollection<T> implements Collection<T> {
+public class DelegatingCollection<T> implements Collection<T>, Serializable {
 
     private final Collection<T> delegate;
 

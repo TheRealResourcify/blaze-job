@@ -16,6 +16,7 @@
 
 package com.blazebit.job.view.model;
 
+import java.io.Serializable;
 import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
@@ -28,7 +29,7 @@ import java.util.Set;
  * @author Christian Beikov
  * @since 1.0.0
  */
-public class DelegatingMap<K, V> implements Map<K, V> {
+public class DelegatingMap<K, V> implements Map<K, V>, Serializable {
 
     private final Map<K, V> delegate;
 

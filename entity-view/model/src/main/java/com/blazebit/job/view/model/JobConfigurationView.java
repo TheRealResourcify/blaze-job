@@ -39,6 +39,8 @@ import java.util.Set;
  */
 @EntityView(JobConfiguration.class)
 public abstract class JobConfigurationView implements com.blazebit.job.JobConfiguration, Serializable {
+    
+    private static final Serializable EMPTY = new Serializable() {};
 
     private final DirtyMarkingSet<TimeFrame> executionTimeFrames;
     private final DirtyMarkingMap<String, Serializable> parameters;
@@ -110,26 +112,26 @@ public abstract class JobConfigurationView implements com.blazebit.job.JobConfig
         public V put(K key, V value) {
             V oldValue = super.put(key, value);
             if (!Objects.equals(oldValue, value)) {
-                setParameterSerializable(null);
+                setParameterSerializable(EMPTY);
             }
             return oldValue;
         }
 
         @Override
         public V remove(Object key) {
-            setParameterSerializable(null);
+            setParameterSerializable(EMPTY);
             return super.remove(key);
         }
 
         @Override
         public void putAll(Map<? extends K, ? extends V> m) {
-            setParameterSerializable(null);
+            setParameterSerializable(EMPTY);
             super.putAll(m);
         }
 
         @Override
         public void clear() {
-            setParameterSerializable(null);
+            setParameterSerializable(EMPTY);
             super.clear();
         }
 
@@ -163,7 +165,7 @@ public abstract class JobConfigurationView implements com.blazebit.job.JobConfig
         @Override
         public void remove() {
             super.remove();
-            setParameterSerializable(null);
+            setParameterSerializable(EMPTY);
         }
     }
 
@@ -185,37 +187,37 @@ public abstract class JobConfigurationView implements com.blazebit.job.JobConfig
 
         @Override
         public boolean add(T t) {
-            setParameterSerializable(null);
+            setParameterSerializable(EMPTY);
             return super.add(t);
         }
 
         @Override
         public boolean remove(Object o) {
-            setParameterSerializable(null);
+            setParameterSerializable(EMPTY);
             return super.remove(o);
         }
 
         @Override
         public boolean addAll(Collection<? extends T> c) {
-            setParameterSerializable(null);
+            setParameterSerializable(EMPTY);
             return super.addAll(c);
         }
 
         @Override
         public boolean retainAll(Collection<?> c) {
-            setParameterSerializable(null);
+            setParameterSerializable(EMPTY);
             return super.retainAll(c);
         }
 
         @Override
         public boolean removeAll(Collection<?> c) {
-            setParameterSerializable(null);
+            setParameterSerializable(EMPTY);
             return super.removeAll(c);
         }
 
         @Override
         public void clear() {
-            setParameterSerializable(null);
+            setParameterSerializable(EMPTY);
             super.clear();
         }
     }
