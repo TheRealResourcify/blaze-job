@@ -40,7 +40,7 @@ import java.util.Set;
 @EntityView(JobConfiguration.class)
 public abstract class JobConfigurationView implements com.blazebit.job.JobConfiguration, Serializable {
     
-    private static final Serializable EMPTY = new Serializable() {};
+    private static final Serializable EMPTY = new Serializable() { };
 
     private final DirtyMarkingSet<TimeFrame> executionTimeFrames;
     private final DirtyMarkingMap<String, Serializable> parameters;

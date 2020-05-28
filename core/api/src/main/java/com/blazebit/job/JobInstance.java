@@ -125,11 +125,30 @@ public interface JobInstance<ID> {
     void onChunkSuccess(JobInstanceProcessingContext<?> processingContext);
 
     /**
+     * Returns if this job instance is long running.
+     * A long running job instance will transition to the {@link JobInstanceState#RUNNING} state via {@link #markRunning(JobInstanceProcessingContext)}
+     * and will be executed on a cluster node. If the cluster topology changes, the state of jobs will be queried through cluster events.
+     *
+     * @return Whether the job instance is long running
+     */
+    default boolean isLongRunning() {
+        return false;
+    }
+
+    /**
      * Returns the job configuration.
      *
      * @return the job configuration
      */
     JobConfiguration getJobConfiguration();
+
+    /**
+     * Marks the given job instance as running which happens when {@link JobInstance#isLongRunning()} is <code>true</code>.
+     * After this method, {@link #getState()} should return {@link JobInstanceState#RUNNING}.
+     *
+     * @param processingContext The processing context
+     */
+    void markRunning(JobInstanceProcessingContext<?> processingContext);
 
     /**
      * Marks the given job instance as done and passes the last job instance processor execution result.

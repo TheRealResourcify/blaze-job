@@ -150,14 +150,38 @@ public class EntityViewJobManager implements JobManager {
         if (!(partitionKey instanceof EntityViewPartitionKey)) {
             throw new IllegalArgumentException("The given partition key does not implement EntityViewPartitionKey: " + partitionKey);
         }
-        Class<? extends JobInstance<?>> jobInstanceType = partitionKey.getJobInstanceType();
         EntityViewPartitionKey entityViewPartitionKey = (EntityViewPartitionKey) partitionKey;
         Instant now = clock.instant();
         CriteriaBuilder<Object> criteriaBuilder = createCriteriaBuilder(now, partition, partitionCount, entityViewPartitionKey, ids);
-        CriteriaBuilder<JobInstance<?>> cb = entityViewManager.applySetting(EntityViewSetting.create((Class<JobInstance<?>>) jobInstanceType), criteriaBuilder);
+        CriteriaBuilder<JobInstance<?>> cb = entityViewManager.applySetting(EntityViewSetting.create((Class<JobInstance<?>>) entityViewPartitionKey.getEntityView()), criteriaBuilder);
         List<JobInstance<?>> jobInstances = cb.getQuery()
             .setHint("org.hibernate.lockMode.e", "UPGRADE_SKIPLOCKED")
             .setMaxResults(limit)
+            .getResultList();
+
+        return jobInstances;
+    }
+
+    @Override
+    public List<JobInstance<?>> getRunningJobInstances(int partition, int partitionCount, PartitionKey partitionKey) {
+        if (!(partitionKey instanceof EntityViewPartitionKey)) {
+            throw new IllegalArgumentException("The given partition key does not implement EntityViewPartitionKey: " + partitionKey);
+        }
+        EntityViewPartitionKey entityViewPartitionKey = (EntityViewPartitionKey) partitionKey;
+        String partitionPredicate = entityViewPartitionKey.getPartitionPredicate("e");
+        String partitionKeyAttributeName = entityViewPartitionKey.getPartitionKeyAttributeName();
+
+        CriteriaBuilder<Object> criteriaBuilder = criteriaBuilderFactory.create(entityManager, Object.class)
+            .from(entityViewPartitionKey.getEntityClass(), "e");
+        if (!partitionPredicate.isEmpty()) {
+            criteriaBuilder.whereExpression(partitionPredicate);
+        }
+        if (partitionCount > 1) {
+            criteriaBuilder.where("MOD(e." + partitionKeyAttributeName + ", " + partitionCount + ")").eqLiteral(partition);
+        }
+        criteriaBuilder.where(entityViewPartitionKey.getStateExpression("e")).eqLiteral(entityViewPartitionKey.getStateValueMappingFunction().apply(JobInstanceState.RUNNING));
+        CriteriaBuilder<JobInstance<?>> cb = entityViewManager.applySetting(EntityViewSetting.create((Class<JobInstance<?>>) entityViewPartitionKey.getEntityView()), criteriaBuilder);
+        List<JobInstance<?>> jobInstances = cb.getQuery()
             .getResultList();
 
         return jobInstances;

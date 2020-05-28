@@ -47,6 +47,10 @@ public enum JobInstanceState {
     /**
      * A job instance with that state is going to be remove during an update.
      */
-    REMOVED;
+    REMOVED,
+    /**
+     * A job instance with that state is a long running job that is currently running.
+     */
+    RUNNING;
 
 }

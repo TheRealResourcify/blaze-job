@@ -57,6 +57,29 @@ public interface JobScheduler {
     void reschedule(JobInstance<?> jobInstance);
 
     /**
+     * Returns the cluster position where the given long running job instance is running, or <code>-1</code>.
+     *
+     * @param jobInstance The long running job instance
+     * @return The cluster position
+     */
+    int getClusterPosition(JobInstance<?> jobInstance);
+
+    /**
+     * Returns the thread stack trace of the given long running job instance if it is still running, or <code>null</code>.
+     *
+     * @param jobInstance The long running job instance
+     * @return The trace of the job instance processor
+     */
+    String getTrace(JobInstance<?> jobInstance);
+
+    /**
+     * Cancels the given long running job instance if it is still running.
+     *
+     * @param jobInstance The long running job instance to cancel
+     */
+    void cancel(JobInstance<?> jobInstance);
+
+    /**
      * Stops the job scheduler.
      * After this method finished no further jobs are scheduled but there may still be running jobs.
      */

@@ -72,6 +72,16 @@ public interface JobManager {
     List<JobInstance<?>> getJobInstancesToProcess(int partition, int partitionCount, int limit, PartitionKey partitionKey, Set<JobInstance<?>> jobInstancesToInclude);
 
     /**
+     * Returns a list of job instances that have the status {@link JobInstanceState#RUNNING} for the given partition.
+     *
+     * @param partition The partition number
+     * @param partitionCount The partition count
+     * @param partitionKey The partition key
+     * @return The list of job instances
+     */
+    List<JobInstance<?>> getRunningJobInstances(int partition, int partitionCount, PartitionKey partitionKey);
+
+    /**
      * Returns the next schedule at which the given partition must process job instances.
      *
      * @param partition The partition number

@@ -50,6 +50,11 @@ public abstract class AbstractJobInstance<ID> implements JobInstance<ID>, IdHold
     }
 
     @Override
+    public void markRunning(JobInstanceProcessingContext<?> processingContext) {
+        setState(JobInstanceState.RUNNING);
+    }
+
+    @Override
     public void markDone(JobInstanceProcessingContext<?> jobProcessingContext, Object result) {
         setState(JobInstanceState.DONE);
     }

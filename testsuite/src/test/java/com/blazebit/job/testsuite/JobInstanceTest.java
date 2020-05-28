@@ -19,6 +19,7 @@ import com.blazebit.actor.ActorContext;
 import com.blazebit.actor.spi.ClusterNodeInfo;
 import com.blazebit.actor.spi.ClusterStateListener;
 import com.blazebit.actor.spi.ClusterStateManager;
+import com.blazebit.actor.spi.LockService;
 import com.blazebit.actor.spi.StateReturningEvent;
 import com.blazebit.job.JobContext;
 import com.blazebit.job.JobInstanceProcessingContext;
@@ -46,15 +47,20 @@ import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.Callable;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class JobInstanceTest extends AbstractJobTest {
 
@@ -447,10 +453,108 @@ public class JobInstanceTest extends AbstractJobTest {
         assertEquals(JobInstanceState.DONE, jobInstance.getState());
     }
 
-    private static class MutableClusterStateManager implements ClusterStateManager, ClusterNodeInfo {
+    @Test
+    public void testLongRunning() throws Exception {
+        // GIVEN
+        MutableClusterStateManager clusterStateManager = new MutableClusterStateManager();
+        CountDownLatch processorEnterLatch = new CountDownLatch(1);
+        CountDownLatch processorLatch = new CountDownLatch(1);
+        this.jobContext = builder()
+            .withJobInstanceProcessorFactory(JobInstanceProcessorFactory.of(((jobInstance, context) -> {
+                processorEnterLatch.countDown();
+                try {
+                    processorLatch.await();
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+                return null;
+            })))
+            .withActorContextBuilder(ActorContext.builder().withClusterStateManager(clusterStateManager)).createContext();
+        SimpleJobInstance jobInstance = new SimpleJobInstance(true);
+        jobInstance.setState(JobInstanceState.NEW);
+        jobContext.getJobManager().addJobInstance(jobInstance);
+
+        // WHEN
+        processorEnterLatch.await();
+        int clusterPosition = jobContext.getClusterPosition(jobInstance);
+        String trace = jobContext.getTrace(jobInstance);
+        jobContext.cancel(jobInstance);
+
+        // THEN
+        await();
+        jobContext.stop(1, TimeUnit.MINUTES);
+        assertEquals(JobInstanceState.FAILED, jobInstance.getState());
+        assertEquals(0, clusterPosition);
+        assertTrue(trace.contains("java.util.concurrent.CountDownLatch.await"));
+    }
+
+    @Test
+    public void testLongRunningTakeOver() throws Exception {
+        // GIVEN
+        MutableClusterStateManager clusterStateManager = new MutableClusterStateManager();
+        CountDownLatch processorEnterLatch = new CountDownLatch(1);
+        CountDownLatch processorLatch = new CountDownLatch(1);
+        this.jobContext = builder()
+            .withJobInstanceProcessorFactory(JobInstanceProcessorFactory.of(((jobInstance, context) -> {
+                processorEnterLatch.countDown();
+                try {
+                    processorLatch.await();
+                } catch (InterruptedException e) {
+                    throw new RuntimeException(e);
+                }
+                return null;
+            })))
+            .withActorContextBuilder(ActorContext.builder().withClusterStateManager(clusterStateManager)).createContext();
+        SimpleJobInstance jobInstance = new SimpleJobInstance(true);
+        jobInstance.setState(JobInstanceState.RUNNING);
+        jobContext.getJobManager().addJobInstance(jobInstance);
+
+        // WHEN
+        clusterStateManager.fireClusterStateChanged();
+        processorEnterLatch.await();
+        int clusterPosition = jobContext.getClusterPosition(jobInstance);
+        String trace = jobContext.getTrace(jobInstance);
+        jobContext.cancel(jobInstance);
+
+        // THEN
+        await();
+        jobContext.stop(1, TimeUnit.MINUTES);
+        assertEquals(JobInstanceState.FAILED, jobInstance.getState());
+        assertEquals(0, clusterPosition);
+        assertTrue(trace.contains("java.util.concurrent.CountDownLatch.await"));
+    }
+
+    @Test
+    public void testLongRunningSkipAlreadyRunning() throws Exception {
+        // GIVEN
+        MutableClusterStateManager clusterStateManager = new MutableClusterStateManager();
+        CountDownLatch processorEnterLatch = new CountDownLatch(1);
+        this.jobContext = builder()
+            .withJobInstanceProcessorFactory(JobInstanceProcessorFactory.of(((jobInstance, context) -> {
+                processorEnterLatch.countDown();
+                return null;
+            })))
+            .withActorContextBuilder(ActorContext.builder().withClusterStateManager(clusterStateManager)).createContext();
+        SimpleJobInstance jobInstance = new SimpleJobInstance(true);
+        jobInstance.setState(JobInstanceState.RUNNING);
+        jobContext.getJobManager().addJobInstance(jobInstance);
+
+        // WHEN
+        clusterStateManager.eventFunction = event -> Collections.singletonMap(null, new SimpleFuture<>(new int[]{ 1 }));
+        clusterStateManager.fireClusterStateChanged();
+
+        // THEN
+        jobContext.stop(1, TimeUnit.MINUTES);
+        assertEquals(JobInstanceState.RUNNING, jobInstance.getState());
+        assertEquals(1, processorEnterLatch.getCount());
+    }
+
+    private static class MutableClusterStateManager implements ClusterStateManager, ClusterNodeInfo, LockService {
 
         private final List<ClusterStateListener> clusterStateListeners = new CopyOnWriteArrayList<>();
+        private final ConcurrentMap<String, Lock> locks = new ConcurrentHashMap<>();
         private final Map<Class<?>, List<Consumer<Serializable>>> listeners = new ConcurrentHashMap<>();
+        private Function<StateReturningEvent<?>, Map<ClusterNodeInfo, Future<?>>> eventFunction = e -> Collections.emptyMap();
         private boolean isCoordinator = true;
         private long clusterVersion = 0L;
         private int clusterPosition = 0;
@@ -474,6 +578,16 @@ public class JobInstanceTest extends AbstractJobTest {
         @Override
         public <T extends Serializable> void registerListener(Class<T> eventClass, java.util.function.Consumer<T> listener) {
             listeners.computeIfAbsent(eventClass, k -> new CopyOnWriteArrayList<>()).add((java.util.function.Consumer<Serializable>) listener);
+        }
+
+        @Override
+        public Lock getLock(String name) {
+            return locks.computeIfAbsent(name, k -> new ReentrantLock());
+        }
+
+        @Override
+        public LockService getLockService() {
+            return this;
         }
 
         @Override
@@ -537,7 +651,15 @@ public class JobInstanceTest extends AbstractJobTest {
 
         @Override
         public <T> Map<ClusterNodeInfo, Future<T>> fireEventExcludeSelf(StateReturningEvent<T> event) {
-            return null;
+            return (Map) eventFunction.apply(event);
+        }
+
+        public Function<StateReturningEvent<?>, Map<ClusterNodeInfo, Future<?>>> getEventFunction() {
+            return eventFunction;
+        }
+
+        public void setEventFunction(Function<StateReturningEvent<?>, Map<ClusterNodeInfo, Future<?>>> eventFunction) {
+            this.eventFunction = eventFunction;
         }
 
         private void visitInterfaces(java.util.function.Consumer<Class<?>> consumer, Class<?> clazz, Set<Class<?>> visitedClasses) {
@@ -585,6 +707,40 @@ public class JobInstanceTest extends AbstractJobTest {
 
         public void setClusterSize(int clusterSize) {
             this.clusterSize = clusterSize;
+        }
+    }
+
+    private static class SimpleFuture<T> implements Future<T> {
+
+        private final T result;
+
+        public SimpleFuture(T result) {
+            this.result = result;
+        }
+
+        @Override
+        public boolean cancel(boolean mayInterruptIfRunning) {
+            return false;
+        }
+
+        @Override
+        public boolean isCancelled() {
+            return false;
+        }
+
+        @Override
+        public boolean isDone() {
+            return true;
+        }
+
+        @Override
+        public T get() throws InterruptedException, ExecutionException {
+            return result;
+        }
+
+        @Override
+        public T get(long timeout, TimeUnit unit) throws InterruptedException, ExecutionException, TimeoutException {
+            return result;
         }
     }
 }

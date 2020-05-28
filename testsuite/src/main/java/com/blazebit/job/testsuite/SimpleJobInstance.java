@@ -25,10 +25,21 @@ import java.time.Instant;
 public class SimpleJobInstance extends AbstractJobInstance<Long> {
 
     private JobConfiguration jobConfiguration = new JobConfiguration();
+    private boolean longRunning;
 
     public SimpleJobInstance() {
+        this(false);
+    }
+
+    public SimpleJobInstance(boolean longRunning) {
         setCreationTime(Instant.now());
         setScheduleTime(getCreationTime());
+        this.longRunning = longRunning;
+    }
+
+    @Override
+    public boolean isLongRunning() {
+        return longRunning;
     }
 
     @Override

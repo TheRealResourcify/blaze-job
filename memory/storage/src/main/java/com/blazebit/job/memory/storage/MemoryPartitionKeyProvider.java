@@ -26,6 +26,7 @@ import com.blazebit.job.spi.PartitionKeyProviderFactory;
 
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Set;
 
 /**
  * A factory as well as {@link PartitionKeyProvider} implementation providing static partition keys.
@@ -38,19 +39,30 @@ public class MemoryPartitionKeyProvider implements PartitionKeyProvider, Partiti
 
     private static final Collection<PartitionKey> NON_TRIGGER = Collections.singletonList(new PartitionKey() {
         @Override
+        public String getName() {
+            return "jobInstance";
+        }
+
+        @Override
         public boolean matches(JobInstance<?> jobInstance) {
             return !(jobInstance instanceof JobTrigger);
         }
 
         @Override
         public String toString() {
-            return "jobInstance";
+            return getName();
         }
     });
     private static final Collection<PartitionKey> TRIGGER_ONLY = Collections.singletonList(new PartitionKey() {
+
         @Override
-        public Class<? extends JobInstance<?>> getJobInstanceType() {
-            return JobTrigger.class;
+        public String getName() {
+            return "jobTrigger";
+        }
+
+        @Override
+        public Set<Class<? extends JobInstance<?>>> getJobInstanceTypes() {
+            return Collections.singleton(JobTrigger.class);
         }
 
         @Override
@@ -60,7 +72,7 @@ public class MemoryPartitionKeyProvider implements PartitionKeyProvider, Partiti
 
         @Override
         public String toString() {
-            return "jobTrigger";
+            return getName();
         }
     });
 

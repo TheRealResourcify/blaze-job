@@ -16,6 +16,9 @@
 
 package com.blazebit.job;
 
+import java.util.Collections;
+import java.util.Set;
+
 /**
  * A testable description of a subset of job instances.
  *
@@ -25,12 +28,28 @@ package com.blazebit.job;
 public interface PartitionKey {
 
     /**
+     * Returns the name of the partition key that is unique and used for configuration of the scheduler.
+     *
+     * @return the name of the partition key
+     */
+    String getName();
+
+    /**
+     * Returns the number of jobs to schedule in parallel within one scheduler transaction.
+     *
+     * @return The number of job to schedule
+     */
+    default int getProcessCount() {
+        return 1;
+    }
+
+    /**
      * Returns the concrete job instance type that is described by this partition key.
      *
      * @return the concrete job instance type
      */
-    default Class<? extends JobInstance<?>> getJobInstanceType() {
-        return (Class<? extends JobInstance<?>>) (Class<?>) JobInstance.class;
+    default Set<Class<? extends JobInstance<?>>> getJobInstanceTypes() {
+        return (Set<Class<? extends JobInstance<?>>>) (Set<?>) Collections.singleton(JobInstance.class);
     }
 
     /**
@@ -40,5 +59,35 @@ public interface PartitionKey {
      * @return whether the given job instance is part of this partition key
      */
     boolean matches(JobInstance<?> jobInstance);
+
+    /**
+     * The transaction timeout for job processing of the partition.
+     * When -1, the default transaction timeout is used.
+     *
+     * @return The transaction timeout
+     */
+    default int getTransactionTimeoutMillis() {
+        return -1;
+    }
+
+    /**
+     * The amount of seconds to backoff when a job processor throws a {@link JobTemporaryException}.
+     * When -1, the default temporary error backoff is used.
+     *
+     * @return The temporary error backoff
+     */
+    default int getTemporaryErrorBackoffSeconds() {
+        return -1;
+    }
+
+    /**
+     * The amount of seconds to backoff when a job processor throws a {@link JobRateLimitException}.
+     * When -1, the default rate limit backoff is used.
+     *
+     * @return The rate limit backoff
+     */
+    default int getRateLimitBackoffSeconds() {
+        return -1;
+    }
 
 }

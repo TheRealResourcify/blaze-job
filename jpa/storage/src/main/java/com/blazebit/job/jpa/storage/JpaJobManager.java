@@ -269,7 +269,6 @@ public class JpaJobManager implements JobManager {
         if (!(partitionKey instanceof JpaPartitionKey)) {
             throw new IllegalArgumentException("The given partition key does not implement JpaPartitionKey: " + partitionKey);
         }
-        Class<? extends JobInstance<?>> jobInstanceType = partitionKey.getJobInstanceType();
         JpaPartitionKey jpaPartitionKey = (JpaPartitionKey) partitionKey;
         String partitionPredicate = jpaPartitionKey.getPartitionPredicate("e");
         String idAttributeName = jpaPartitionKey.getIdAttributeName();
@@ -280,7 +279,7 @@ public class JpaJobManager implements JobManager {
         String joinFetches = jpaPartitionKey.getJoinFetches("e");
         Instant now = clock.instant();
         TypedQuery<? extends JobInstance<?>> typedQuery = entityManager.createQuery(
-            "SELECT e FROM " + jobInstanceType.getName() + " e " +
+            "SELECT e FROM " + jpaPartitionKey.getEntityClass().getName() + " e " +
                 joinFetches + " " +
                 "WHERE e." + scheduleAttributeName + " <= :now " +
                 (partitionPredicate.isEmpty() ? "" : "AND " + partitionPredicate + " ") +
@@ -288,7 +287,7 @@ public class JpaJobManager implements JobManager {
                 (statePredicate == null || statePredicate.isEmpty() ? "" : "AND " + statePredicate + " ") +
                 (ids.isEmpty() ? "" : "AND e." + idAttributeName + " IN :ids ") +
                 "ORDER BY e." + scheduleAttributeName + " ASC, e." + idAttributeName + " ASC",
-            jobInstanceType
+            jpaPartitionKey.getEntityClass()
         );
         typedQuery.setParameter("now", now);
         if (stateValueMappingFunction != null) {
@@ -314,6 +313,36 @@ public class JpaJobManager implements JobManager {
     }
 
     @Override
+    public List<JobInstance<?>> getRunningJobInstances(int partition, int partitionCount, PartitionKey partitionKey) {
+        if (!(partitionKey instanceof JpaPartitionKey)) {
+            throw new IllegalArgumentException("The given partition key does not implement JpaPartitionKey: " + partitionKey);
+        }
+        JpaPartitionKey jpaPartitionKey = (JpaPartitionKey) partitionKey;
+        String partitionPredicate = jpaPartitionKey.getPartitionPredicate("e");
+        String partitionKeyAttributeName = jpaPartitionKey.getPartitionKeyAttributeName();
+        String statePredicate = jpaPartitionKey.getStatePredicate("e");
+        Function<JobInstanceState, Object> stateValueMappingFunction = jpaPartitionKey.getStateValueMappingFunction();
+        String joinFetches = jpaPartitionKey.getJoinFetches("e");
+        TypedQuery<? extends JobInstance<?>> typedQuery = entityManager.createQuery(
+            "SELECT e FROM " + jpaPartitionKey.getEntityClass().getName() + " e " +
+                joinFetches + " " +
+                "WHERE " + statePredicate +
+                (partitionPredicate.isEmpty() ? "" : "AND " + partitionPredicate + " ") +
+                (partitionCount > 1 ? "AND MOD(e." + partitionKeyAttributeName + ", " + partitionCount + ") = " + partition + " " : ""),
+            jpaPartitionKey.getEntityClass()
+        );
+        typedQuery.setParameter("readyState", stateValueMappingFunction.apply(JobInstanceState.RUNNING));
+        List<JobInstance<?>> jobInstances = (List<JobInstance<?>>) (List) typedQuery.getResultList();
+
+        // Detach the job instances to avoid accidental flushes due to changes
+//        for (int i = 0; i < jobInstances.size(); i++) {
+//            entityManager.detach(jobInstances.get(i));
+//        }
+
+        return jobInstances;
+    }
+
+    @Override
     public Instant getNextSchedule(int partition, int partitionCount, PartitionKey partitionKey, Set<JobInstance<?>> jobInstancesToInclude) {
         List<Object> ids = new ArrayList<>();
         if (jobInstancesToInclude != null) {
@@ -327,7 +356,6 @@ public class JpaJobManager implements JobManager {
         if (!(partitionKey instanceof JpaPartitionKey)) {
             throw new IllegalArgumentException("The given partition key does not implement JpaPartitionKey: " + partitionKey);
         }
-        Class<? extends JobInstance<?>> jobInstanceType = partitionKey.getJobInstanceType();
         JpaPartitionKey jpaPartitionKey = (JpaPartitionKey) partitionKey;
         String partitionPredicate = jpaPartitionKey.getPartitionPredicate("e");
         String idAttributeName = jpaPartitionKey.getIdAttributeName();
@@ -337,7 +365,7 @@ public class JpaJobManager implements JobManager {
         Function<JobInstanceState, Object> stateValueMappingFunction = jpaPartitionKey.getStateValueMappingFunction();
 
         TypedQuery<Instant> typedQuery = entityManager.createQuery(
-            "SELECT e." + scheduleAttributeName + " FROM " + jobInstanceType.getName() + " e " +
+            "SELECT e." + scheduleAttributeName + " FROM " + jpaPartitionKey.getEntityClass().getName() + " e " +
                 "WHERE 1=1 " +
                 (statePredicate == null || statePredicate.isEmpty() ? "" : "AND " + statePredicate + " ") +
                 (partitionPredicate.isEmpty() ? "" : "AND " + partitionPredicate + " ") +
@@ -394,7 +422,7 @@ public class JpaJobManager implements JobManager {
         String stateExpression = jpaPartitionKey.getStateExpression("i");
         if (stateExpression != null && !stateExpression.isEmpty() && !states.isEmpty()) {
             StringBuilder sb = new StringBuilder();
-            sb.append("DELETE FROM ").append(partitionKey.getJobInstanceType().getName()).append(" i ")
+            sb.append("DELETE FROM ").append(jpaPartitionKey.getEntityClass().getName()).append(" i ")
                 .append("WHERE ").append(stateExpression).append(" IN (");
             int i = 0;
             int size = states.size();

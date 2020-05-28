@@ -39,13 +39,6 @@ public abstract class AbstractJob implements Job, IdHolderView<Long> {
     public abstract void setName(String name);
 
     /**
-     * Sets the given job configuration.
-     *
-     * @param jobConfiguration The job configuration
-     */
-    public abstract void setJobConfiguration(JobConfigurationView jobConfiguration);
-
-    /**
      * Sets the given creation time.
      *
      * @param creationTime The creation time

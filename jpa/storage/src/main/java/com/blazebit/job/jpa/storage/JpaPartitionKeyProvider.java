@@ -20,19 +20,25 @@ import com.blazebit.job.JobException;
 import com.blazebit.job.JobInstance;
 import com.blazebit.job.JobInstanceState;
 import com.blazebit.job.JobTrigger;
+import com.blazebit.job.Partition;
 import com.blazebit.job.PartitionKey;
+import com.blazebit.job.Partitions;
 import com.blazebit.job.ServiceProvider;
 import com.blazebit.job.jpa.model.JpaPartitionKey;
 import com.blazebit.job.spi.PartitionKeyProvider;
 
 import javax.persistence.EntityManager;
 import javax.persistence.metamodel.EntityType;
+import javax.persistence.metamodel.IdentifiableType;
+import javax.persistence.metamodel.Metamodel;
+import java.lang.annotation.Annotation;
 import java.lang.reflect.Modifier;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.function.Function;
 
 /**
@@ -99,8 +105,8 @@ public class JpaPartitionKeyProvider implements PartitionKeyProvider {
      */
     public static final String JOB_INSTANCE_STATE_VALUE_MAPPING_FUNCTION_PROPERTY = "job.jpa.storage.job_instance_state_value_mapping_function";
 
-    private final Collection<PartitionKey> jobTriggerPartitionKeys;
-    private final Collection<PartitionKey> jobInstancePartitionKeys;
+    private final Map<String, PartitionKey> jobTriggerPartitionKeys;
+    private final Map<String, PartitionKey> jobInstancePartitionKeys;
 
     /**
      * Creates a new partition key provider that makes use of the service provider and configuration source to determine the {@link EntityManager} and attribute names.
@@ -147,10 +153,11 @@ public class JpaPartitionKeyProvider implements PartitionKeyProvider {
             throw new JobException("No entity manager given!");
         }
 
-        Collection<PartitionKey> jobTriggerPartitionKeys = new ArrayList<>();
-        Collection<PartitionKey> jobInstancePartitionKeys = new ArrayList<>();
+        Map<String, PartitionKey> jobTriggerPartitionKeys = new TreeMap<>();
+        Map<String, PartitionKey> jobInstancePartitionKeys = new TreeMap<>();
         Map<EntityType<?>, List<EntityType<?>>> entitySubtypeMap = new HashMap<>();
-        for (EntityType<?> entity : entityManager.getMetamodel().getEntities()) {
+        Metamodel metamodel = entityManager.getMetamodel();
+        for (EntityType<?> entity : metamodel.getEntities()) {
             Class<?> javaType = entity.getJavaType();
             // We only query non-abstract entity types
             if (javaType != null && !Modifier.isAbstract(javaType.getModifiers())) {
@@ -184,9 +191,10 @@ public class JpaPartitionKeyProvider implements PartitionKeyProvider {
             }
         }
 
+        StringBuilder errors = new StringBuilder();
         for (Map.Entry<EntityType<?>, List<EntityType<?>>> entry : entitySubtypeMap.entrySet()) {
             EntityType<?> entity = entry.getKey();
-            Class<?> javaType = entity.getJavaType();
+            Class<? extends JobInstance<?>> javaType = (Class<? extends JobInstance<?>>) entity.getJavaType();
             Function<String, String> partitionKeyPredicateProvider;
             if (entry.getValue().isEmpty()) {
                 partitionKeyPredicateProvider = null;
@@ -194,47 +202,251 @@ public class JpaPartitionKeyProvider implements PartitionKeyProvider {
                 partitionKeyPredicateProvider = alias -> "TYPE(" + alias + ") = " + entity.getName();
             }
 
-            if (JobTrigger.class.isAssignableFrom(javaType)) {
-                jobTriggerPartitionKeys.add(
-                    JpaPartitionKey.builder()
-                        .withName(entity.getName())
-                        .withJobInstanceType((Class<? extends JobInstance<?>>) javaType)
-                        .withPartitionPredicateProvider(partitionKeyPredicateProvider)
-                        .withIdAttributeName(jobTriggerIdAttributeName)
-                        .withScheduleAttributeName(jobTriggerScheduleAttributeName)
-                        .withLastExecutionAttributeName(jobTriggerLastExecutionAttributeName)
-                        .withPartitionKeyAttributeName(jobTriggerIdAttributeName)
-                        .withStateAttributeName(jobTriggerStateAttributeName)
-                        .withStateValueMappingFunction(jobTriggerStateValueMapper)
-                        .build()
-                );
-            } else if (JobInstance.class.isAssignableFrom(javaType)) {
-                jobInstancePartitionKeys.add(
-                    JpaPartitionKey.builder()
-                        .withName(entity.getName())
-                        .withJobInstanceType((Class<? extends JobInstance<?>>) javaType)
-                        .withPartitionPredicateProvider(partitionKeyPredicateProvider)
-                        .withIdAttributeName(jobInstanceIdAttributeName)
-                        .withScheduleAttributeName(jobInstanceScheduleAttributeName)
-                        .withLastExecutionAttributeName(jobInstanceLastExecutionAttributeName)
-                        .withPartitionKeyAttributeName(jobInstancePartitionKeyAttributeName)
-                        .withStateAttributeName(jobInstanceStateAttributeName)
-                        .withStateValueMappingFunction(jobInstanceStateValueMapper)
-                        .build()
-                );
+
+            Partition[] partitions;
+            Partitions annotation = javaType.getAnnotation(Partitions.class);
+            if (annotation == null) {
+                Partition partition = javaType.getAnnotation(Partition.class);
+                if (partition == null) {
+                    partitions = PartitionLiteral.INSTANCE;
+                } else {
+                    partitions = new Partition[]{ partition };
+                }
+            } else {
+                partitions = annotation.value();
+            }
+
+            for (Partition partition : partitions) {
+                String partitionNameBase = javaType.getName();
+                if (!partition.name().isEmpty()) {
+                    partitionNameBase = partition.name();
+                }
+                int processCount = partition.processCount();
+                int transactionTimeoutMillis = partition.transactionTimeoutMillis();
+                int temporaryErrorBackoffSeconds = partition.temporaryErrorBackoffSeconds();
+                int rateLimitBackoffSeconds = partition.rateLimitBackoffSeconds();
+
+                for (int i = 0; i < partition.partitionCount(); i++) {
+                    String partitionName;
+                    if (partition.partitionCount() > 1) {
+                        partitionName = partitionNameBase + "-" + i;
+                    } else {
+                        partitionName = partitionNameBase;
+                    }
+
+                    JpaPartitionKey existingPartitionKey;
+                    if (JobTrigger.class.isAssignableFrom(javaType)) {
+                        existingPartitionKey = (JpaPartitionKey) jobTriggerPartitionKeys.get(partitionName);
+                    } else {
+                        existingPartitionKey = (JpaPartitionKey) jobInstancePartitionKeys.get(partitionName);
+                    }
+                    if (existingPartitionKey != null) {
+                        processCount = Math.max(processCount, existingPartitionKey.getProcessCount());
+                        transactionTimeoutMillis = Math.max(transactionTimeoutMillis, existingPartitionKey.getTransactionTimeoutMillis());
+                        temporaryErrorBackoffSeconds = Math.max(temporaryErrorBackoffSeconds, existingPartitionKey.getTemporaryErrorBackoffSeconds());
+                        rateLimitBackoffSeconds = Math.max(rateLimitBackoffSeconds, existingPartitionKey.getRateLimitBackoffSeconds());
+                        EntityType<?> existingEntity = metamodel.entity(existingPartitionKey.getEntityClass());
+                        javaType = (Class<? extends JobInstance<?>>) getCommonSuperclass(entity, existingEntity);
+                        if (javaType == null) {
+                            errors.append("\n * The entity type " + existingEntity.getName() + " and " + entity.getName() + " use the same partition name '" + partitionName + "' but have no common super type which is necessary for querying!");
+                            continue;
+                        }
+                        if (partitionKeyPredicateProvider == null) {
+                            partitionKeyPredicateProvider = existingPartitionKey::getPartitionPredicate;
+                        } else {
+                            String existingPredicate = existingPartitionKey.getPartitionPredicate("e");
+                            if (existingPredicate != null) {
+                                if (!existingPredicate.contains(partitionKeyPredicateProvider.apply("e"))) {
+                                    Function<String, String> oldPartitionKeyPredicateProvider = partitionKeyPredicateProvider;
+                                    partitionKeyPredicateProvider = alias -> oldPartitionKeyPredicateProvider.apply(alias) + " OR " + existingPartitionKey.getPartitionPredicate(alias);
+                                }
+                            }
+                        }
+                        if (!partition.predicate().isEmpty()) {
+                            String[] parts = partition.predicate().replace("{partition}", "" + i).split("\\{alias}");
+                            PartsRenderingFunction additionalPartitionKeyPredicateProvider = new PartsRenderingFunction(parts);
+
+                            String existingPredicate = partitionKeyPredicateProvider.apply("e");
+                            if (existingPredicate != null && !existingPredicate.isEmpty()) {
+                                if (!existingPredicate.contains(partitionKeyPredicateProvider.apply("e"))) {
+                                    Function<String, String> oldPartitionKeyPredicateProvider = partitionKeyPredicateProvider;
+                                    partitionKeyPredicateProvider = alias -> "(" + oldPartitionKeyPredicateProvider.apply(alias) + ") AND " + additionalPartitionKeyPredicateProvider.apply(alias);
+                                }
+                            } else {
+                                partitionKeyPredicateProvider = additionalPartitionKeyPredicateProvider;
+                            }
+                        }
+                    }
+
+                    if (JobTrigger.class.isAssignableFrom(javaType)) {
+                        jobTriggerPartitionKeys.put(partitionName,
+                            JpaPartitionKey.builder()
+                                .withName(partitionName)
+                                .withEntityClass(javaType)
+                                .withProcessCount(processCount)
+                                .withTransactionTimeoutMillis(transactionTimeoutMillis)
+                                .withTemporaryErrorBackoffSeconds(temporaryErrorBackoffSeconds)
+                                .withRateLimitBackoffSeconds(rateLimitBackoffSeconds)
+                                .withJobInstanceType(javaType)
+                                .withPartitionPredicateProvider(partitionKeyPredicateProvider)
+                                .withIdAttributeName(jobTriggerIdAttributeName)
+                                .withScheduleAttributeName(jobTriggerScheduleAttributeName)
+                                .withLastExecutionAttributeName(jobTriggerLastExecutionAttributeName)
+                                .withPartitionKeyAttributeName(jobTriggerIdAttributeName)
+                                .withStateAttributeName(jobTriggerStateAttributeName)
+                                .withStateValueMappingFunction(jobTriggerStateValueMapper)
+                                .build()
+                        );
+                    } else if (JobInstance.class.isAssignableFrom(javaType)) {
+                        jobInstancePartitionKeys.put(partitionName,
+                            JpaPartitionKey.builder()
+                                .withName(partitionName)
+                                .withEntityClass(javaType)
+                                .withProcessCount(processCount)
+                                .withTransactionTimeoutMillis(transactionTimeoutMillis)
+                                .withTemporaryErrorBackoffSeconds(temporaryErrorBackoffSeconds)
+                                .withRateLimitBackoffSeconds(rateLimitBackoffSeconds)
+                                .withJobInstanceType(javaType)
+                                .withPartitionPredicateProvider(partitionKeyPredicateProvider)
+                                .withIdAttributeName(jobInstanceIdAttributeName)
+                                .withScheduleAttributeName(jobInstanceScheduleAttributeName)
+                                .withLastExecutionAttributeName(jobInstanceLastExecutionAttributeName)
+                                .withPartitionKeyAttributeName(jobInstancePartitionKeyAttributeName)
+                                .withStateAttributeName(jobInstanceStateAttributeName)
+                                .withStateValueMappingFunction(jobInstanceStateValueMapper)
+                                .build()
+                        );
+                    }
+                }
             }
         }
+        if (errors.length() != 0) {
+            errors.insert(0, "There are errors in the job instance partition configuration:");
+            throw new JobException(errors.toString());
+        }
+
         this.jobTriggerPartitionKeys = jobTriggerPartitionKeys;
         this.jobInstancePartitionKeys = jobInstancePartitionKeys;
     }
 
+    private static Class<?> getCommonSuperclass(IdentifiableType<?> t1, IdentifiableType<?> t2) {
+        Class<?> class1 = t1.getJavaType();
+        if (t1 == t2) {
+            return class1;
+        }
+        Class<?> class2 = t2.getJavaType();
+        if (class2.isAssignableFrom(class1)) {
+            return class2;
+        } else if (class1.isAssignableFrom(class2)) {
+            return class1;
+        } else {
+            Class<?> c = null;
+            if (t1.getSupertype() != null) {
+                c = getCommonSuperclass(t1.getSupertype(), t2);
+            }
+            if (c == null && t2.getSupertype() != null) {
+                c = getCommonSuperclass(t1, t2.getSupertype());
+            }
+            return c;
+        }
+    }
+
     @Override
     public Collection<PartitionKey> getDefaultTriggerPartitionKeys() {
-        return jobTriggerPartitionKeys;
+        return jobTriggerPartitionKeys.values();
     }
 
     @Override
     public Collection<PartitionKey> getDefaultJobInstancePartitionKeys() {
-        return jobInstancePartitionKeys;
+        return jobInstancePartitionKeys.values();
+    }
+
+    /**
+     * A partition literal.
+     *
+     * @author Christian Beikov
+     * @since 1.0.0
+     */
+    private static class PartitionLiteral implements Partition {
+
+        public static final Partition[] INSTANCE = new Partition[]{ new PartitionLiteral() };
+
+        private PartitionLiteral() {
+        }
+
+        @Override
+        public String name() {
+            return "";
+        }
+
+        @Override
+        public int processCount() {
+            return 1;
+        }
+
+        @Override
+        public String predicate() {
+            return "";
+        }
+
+        @Override
+        public int partitionCount() {
+            return 1;
+        }
+
+        @Override
+        public int transactionTimeoutMillis() {
+            return -1;
+        }
+
+        @Override
+        public int temporaryErrorBackoffSeconds() {
+            return -1;
+        }
+
+        @Override
+        public int rateLimitBackoffSeconds() {
+            return -1;
+        }
+
+        @Override
+        public Class<? extends Annotation> annotationType() {
+            return Partition.class;
+        }
+    }
+
+    /**
+     * A part rendering function.
+     *
+     * @author Christian Beikov
+     * @since 1.0.0
+     */
+    private static class PartsRenderingFunction implements Function<String, String> {
+
+        private final String[] parts;
+
+        /**
+         * Creates the rendering function.
+         *
+         * @param parts The parts
+         */
+        public PartsRenderingFunction(String[] parts) {
+            this.parts = parts;
+        }
+
+        @Override
+        public String apply(String alias) {
+            int length = parts.length;
+            if (length == 1) {
+                return parts[0];
+            } else {
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < length - 1; i++) {
+                    sb.append(parts[i]).append(alias);
+                }
+                sb.append(parts[length - 1]);
+                return sb.toString();
+            }
+        }
     }
 }

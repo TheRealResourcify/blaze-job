@@ -359,6 +359,17 @@ public class MemoryJobManager implements JobManager {
         }
     }
 
+    @Override
+    public List<JobInstance<?>> getRunningJobInstances(int partition, int partitionCount, PartitionKey partitionKey) {
+        return jobInstances.values().stream()
+            .filter(i -> i.getState() == JobInstanceState.RUNNING
+                && i.getScheduleTime().toEpochMilli() <= clock.millis()
+                && (partitionCount == 1 || (i.getPartitionKey() % partitionCount) == partition)
+                && partitionKey.matches(i)
+            )
+            .collect(Collectors.toList());
+    }
+
     private Stream<MemoryJobInstance<?>> streamJobInstances(int partition, int partitionCount, PartitionKey partitionKey) {
         return jobInstances.values().stream()
             .filter(i -> i.getState() == JobInstanceState.NEW

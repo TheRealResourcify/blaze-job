@@ -36,7 +36,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.ServiceLoader;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
@@ -93,9 +92,9 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
     /**
      * Returns all partition keys.
      *
-     * @return The list of all partition keys
+     * @return The partition keys by name
      */
-    Collection<PartitionKey> getPartitionKeys();
+    Map<String, PartitionKey> getPartitionKeys();
 
     /**
      * Returns the matching partition keys for the given job instance.
@@ -104,6 +103,29 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
      * @return The list of matching partition keys
      */
     Collection<PartitionKey> getPartitionKeys(JobInstance<?> jobInstance);
+
+    /**
+     * Returns the cluster position where the given long running job instance is running, or <code>-1</code>.
+     *
+     * @param jobInstance The long running job instance
+     * @return The cluster position
+     */
+    int getClusterPosition(JobInstance<?> jobInstance);
+
+    /**
+     * Returns the thread stack trace of the given long running job instance if it is still running, or <code>null</code>.
+     *
+     * @param jobInstance The long running job instance
+     * @return The trace of the job instance processor
+     */
+    String getTrace(JobInstance<?> jobInstance);
+
+    /**
+     * Cancels the given long running job instance if it is still running.
+     *
+     * @param jobInstance The long running job instance to cancel
+     */
+    void cancel(JobInstance<?> jobInstance);
 
     /**
      * Refreshes the job instance schedules for the given job instance.
@@ -158,6 +180,27 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
     void stop(long timeout, TimeUnit unit) throws InterruptedException;
 
     /**
+     * The default transaction timeout for job processing of the partition.
+     *
+     * @return The default transaction timeout
+     */
+    int getTransactionTimeoutMillis();
+
+    /**
+     * The default amount of seconds to backoff when a job processor throws a {@link JobTemporaryException}.
+     *
+     * @return The default temporary error backoff
+     */
+    int getTemporaryErrorBackoffSeconds();
+
+    /**
+     * The default amount of seconds to backoff when a job processor throws a {@link JobRateLimitException}.
+     *
+     * @return The default rate limit backoff
+     */
+    int getRateLimitBackoffSeconds();
+
+    /**
      * Returns a builder for a job context.
      *
      * @return a builder for a job context
@@ -196,7 +239,10 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
         private PartitionKeyProviderFactory partitionKeyProviderFactory;
         private PartitionKeyProvider partitionKeyProvider;
         private boolean scheduleRefreshedOnly;
-        private final Map<PartitionKey, Integer> partitionKeys = new HashMap<>();
+        private int transactionTimeoutMillis = -1;
+        private int temporaryErrorBackoffSeconds = -1;
+        private int rateLimitBackoffSeconds = -1;
+        private final Map<String, PartitionKey> partitionKeys = new HashMap<>();
         private final List<JobTriggerListener> jobTriggerListeners = new ArrayList<>();
         private final List<JobInstanceListener> jobInstanceListeners = new ArrayList<>();
         private final Map<String, Object> properties = new HashMap<>();
@@ -290,22 +336,7 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
          */
         public JobContext createContext() {
             checkCreateContext();
-            return new DefaultJobContext(
-                    transactionSupport,
-                    getJobManagerFactory(),
-                    getOrCreateActorContext(),
-                    getScheduleFactory(),
-                    getJobSchedulerFactory(),
-                    getJobProcessorFactory(),
-                    getJobInstanceProcessorFactory(),
-                    getPartitionKeyMap(),
-                    getPartitionKeyProvider(),
-                    getJobTriggerListeners(),
-                    getJobInstanceListeners(),
-                    properties,
-                    serviceMap,
-                    isScheduleRefreshedOnly()
-            );
+            return new DefaultJobContext(this);
         }
 
         /**
@@ -495,16 +526,7 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
          *
          * @return the configured partition keys
          */
-        public Set<PartitionKey> getPartitionKeys() {
-            return partitionKeys.keySet();
-        }
-
-        /**
-         * Returns the configured partition key map.
-         *
-         * @return the configured partition key map
-         */
-        protected Map<PartitionKey, Integer> getPartitionKeyMap() {
+        public Map<String, PartitionKey> getPartitionKeys() {
             return partitionKeys;
         }
 
@@ -512,11 +534,10 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
          * Adds the given partition key and sets the amount of elements that should be processed at once.
          *
          * @param partitionKey The partition key
-         * @param processingCount The amount of elements to process at once for the partition
          * @return this for chaining
          */
-        public T withPartitionKey(PartitionKey partitionKey, int processingCount) {
-            this.partitionKeys.put(partitionKey, processingCount);
+        public T withPartitionKey(PartitionKey partitionKey) {
+            this.partitionKeys.put(partitionKey.getName(), partitionKey);
             return (T) this;
         }
 
@@ -644,6 +665,66 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
         }
 
         /**
+         * Returns the default transaction timeout.
+         *
+         * @return the default transaction timeout
+         */
+        public int getTransactionTimeoutMillis() {
+            return transactionTimeoutMillis;
+        }
+
+        /**
+         * Sets the default transaction timeout.
+         *
+         * @param transactionTimeoutMillis The job id attribute name
+         * @return this for chaining
+         */
+        public T withTransactionTimeoutMillis(int transactionTimeoutMillis) {
+            this.transactionTimeoutMillis = transactionTimeoutMillis;
+            return (T) this;
+        }
+
+        /**
+         * Returns the default temporary error backoff.
+         *
+         * @return the default temporary error backoff
+         */
+        public int getTemporaryErrorBackoffSeconds() {
+            return temporaryErrorBackoffSeconds;
+        }
+
+        /**
+         * Sets the given temporary error backoff.
+         *
+         * @param temporaryErrorBackoffSeconds The job id attribute name
+         * @return this for chaining
+         */
+        public T withTemporaryErrorBackoffSeconds(int temporaryErrorBackoffSeconds) {
+            this.temporaryErrorBackoffSeconds = temporaryErrorBackoffSeconds;
+            return (T) this;
+        }
+
+        /**
+         * Returns the default rate limit backoff.
+         *
+         * @return the default rate limit backoff
+         */
+        public int getRateLimitBackoffSeconds() {
+            return rateLimitBackoffSeconds;
+        }
+
+        /**
+         * Sets the given rate limit backoff.
+         *
+         * @param rateLimitBackoffSeconds The job id attribute name
+         * @return this for chaining
+         */
+        public T withRateLimitBackoffSeconds(int rateLimitBackoffSeconds) {
+            this.rateLimitBackoffSeconds = rateLimitBackoffSeconds;
+            return (T) this;
+        }
+
+        /**
          * Returns the configured properties.
          *
          * @return the configured properties
@@ -724,77 +805,75 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
          */
         protected static class DefaultJobContext implements JobContext {
             private static final String DEFAULT_JOB_INSTANCE_ACTOR_NAME = "jobInstanceScheduler";
-            private static final int DEFAULT_JOB_INSTANCE_PROCESS_COUNT = 1;
             private static final String DEFAULT_JOB_TRIGGER_ACTOR_NAME = "jobTriggerScheduler";
-            private static final int DEFAULT_JOB_TRIGGER_PROCESS_COUNT = 1;
 
             private final TransactionSupport transactionSupport;
             private final JobManager jobManager;
             private final ScheduleFactory scheduleFactory;
             private final JobProcessorFactory jobProcessorFactory;
             private final JobInstanceProcessorFactory jobInstanceProcessorFactory;
-            private final PartitionKeyProvider partitionKeyProvider;
             private final Map<PartitionKey, JobScheduler> jobSchedulers;
+            private final Map<String, PartitionKey> partitionKeys;
             private final Map<Class<?>, List<PartitionKey>> jobInstanceClassToPartitionKeysMapping = new ConcurrentHashMap<>();
             private final JobInstanceListener[] jobInstanceListeners;
             private final Map<String, Object> properties;
             private final Map<Class<?>, Object> serviceMap;
             private final boolean scheduleRefreshedOnly;
+            private final int transactionTimeoutMillis;
+            private final int temporaryErrorBackoffSeconds;
+            private final int rateLimitBackoffSeconds;
 
             /**
              * Creates a job context from the given configuration.
              *
-             * @param transactionSupport The transaction support
-             * @param jobManagerFactory The job manager factory
-             * @param actorContext The actor context
-             * @param scheduleFactory The schedule factory
-             * @param jobSchedulerFactory The job scheduler factory
-             * @param jobProcessorFactory The job processor factory
-             * @param jobInstanceProcessorFactory The job instance processor factory
-             * @param partitionKeyEntries The partition key entries
-             * @param partitionKeyProvider The partition key provider
-             * @param jobTriggerListeners The job trigger listeners
-             * @param jobInstanceListeners The job instance listeners
-             * @param properties The properties
-             * @param serviceMap The service map
-             * @param scheduleRefreshedOnly Whether to schedule only refreshed job instances
+             * @param builderBase The builder
              */
-            protected DefaultJobContext(TransactionSupport transactionSupport, JobManagerFactory jobManagerFactory, ActorContext actorContext, ScheduleFactory scheduleFactory,
-                                        JobSchedulerFactory jobSchedulerFactory, JobProcessorFactory jobProcessorFactory, JobInstanceProcessorFactory jobInstanceProcessorFactory,
-                                        Map<PartitionKey, Integer> partitionKeyEntries, PartitionKeyProvider partitionKeyProvider, List<JobTriggerListener> jobTriggerListeners, List<JobInstanceListener> jobInstanceListeners,
-                                        Map<String, Object> properties, Map<Class<?>, Object> serviceMap, boolean scheduleRefreshedOnly) {
-                this.transactionSupport = transactionSupport;
-                this.scheduleFactory = scheduleFactory;
-                this.jobProcessorFactory = jobProcessorFactory;
-                this.jobInstanceProcessorFactory = jobInstanceProcessorFactory;
-                this.scheduleRefreshedOnly = scheduleRefreshedOnly;
-                this.properties = new HashMap<>(properties);
-                this.serviceMap = new HashMap<>(serviceMap);
-                this.jobManager = jobManagerFactory.createJobManager(this);
+            protected DefaultJobContext(BuilderBase<?> builderBase) {
+                ActorContext actorContext = builderBase.getOrCreateActorContext();
+                JobSchedulerFactory jobSchedulerFactory = builderBase.getJobSchedulerFactory();
+                Map<String, PartitionKey> partitionKeys = builderBase.getPartitionKeys();
+                PartitionKeyProvider partitionKeyProvider = builderBase.getPartitionKeyProvider();
+                List<JobTriggerListener> jobTriggerListeners = builderBase.getJobTriggerListeners();
+                List<JobInstanceListener> jobInstanceListeners = builderBase.getJobInstanceListeners();
+                this.transactionSupport = builderBase.getTransactionSupport();
+                this.scheduleFactory = builderBase.getScheduleFactory();
+                this.jobProcessorFactory = builderBase.getJobProcessorFactory();
+                this.jobInstanceProcessorFactory = builderBase.getJobInstanceProcessorFactory();
+                this.scheduleRefreshedOnly = builderBase.isScheduleRefreshedOnly();
+                this.transactionTimeoutMillis = builderBase.getTransactionTimeoutMillis() < 0 ? 60_000 : builderBase.getTransactionTimeoutMillis();
+                this.temporaryErrorBackoffSeconds = builderBase.getTemporaryErrorBackoffSeconds() < 0 ? 10 : builderBase.getTemporaryErrorBackoffSeconds();
+                this.rateLimitBackoffSeconds = builderBase.getRateLimitBackoffSeconds() < 0 ? 10 : builderBase.getRateLimitBackoffSeconds();
+                this.properties = new HashMap<>(builderBase.getProperties());
+                this.serviceMap = new HashMap<>(builderBase.getServiceMap());
+
+                this.jobManager = builderBase.getJobManagerFactory().createJobManager(this);
                 if (partitionKeyProvider == null) {
                     throw new JobException("No PartitionKeyProvider given!");
-                } else {
-                    this.partitionKeyProvider = partitionKeyProvider;
                 }
-                Collection<PartitionKey> defaultTriggerPartitionKeys = this.partitionKeyProvider.getDefaultTriggerPartitionKeys();
-                if (partitionKeyEntries.isEmpty()) {
-                    Collection<PartitionKey> instancePartitionKeys = this.partitionKeyProvider.getDefaultJobInstancePartitionKeys();
+                Map<String, PartitionKey> partitionKeyMap = new HashMap<>();
+                Collection<PartitionKey> defaultTriggerPartitionKeys = partitionKeyProvider.getDefaultTriggerPartitionKeys();
+                if (partitionKeys.isEmpty()) {
+                    Collection<PartitionKey> instancePartitionKeys = partitionKeyProvider.getDefaultJobInstancePartitionKeys();
 
                     this.jobSchedulers = new HashMap<>(defaultTriggerPartitionKeys.size() + instancePartitionKeys.size());
                     for (PartitionKey instancePartitionKey : instancePartitionKeys) {
-                        JobScheduler jobInstanceScheduler = jobSchedulerFactory.createJobScheduler(this, actorContext, DEFAULT_JOB_INSTANCE_ACTOR_NAME + "/" + instancePartitionKey, DEFAULT_JOB_INSTANCE_PROCESS_COUNT, instancePartitionKey);
+                        JobScheduler jobInstanceScheduler = jobSchedulerFactory.createJobScheduler(this, actorContext, DEFAULT_JOB_INSTANCE_ACTOR_NAME + "/" + instancePartitionKey.getName(), instancePartitionKey.getProcessCount(), instancePartitionKey);
                         jobSchedulers.put(instancePartitionKey, jobInstanceScheduler);
+                        partitionKeyMap.put(instancePartitionKey.getName(), instancePartitionKey);
                     }
                 } else {
-                    this.jobSchedulers = new HashMap<>(defaultTriggerPartitionKeys.size() + partitionKeyEntries.size());
-                    for (Map.Entry<PartitionKey, Integer> entry : partitionKeyEntries.entrySet()) {
-                        jobSchedulers.put(entry.getKey(), jobSchedulerFactory.createJobScheduler(this, actorContext, DEFAULT_JOB_INSTANCE_ACTOR_NAME + "/" + entry.getKey(), entry.getValue(), entry.getKey()));
+                    this.jobSchedulers = new HashMap<>(defaultTriggerPartitionKeys.size() + partitionKeys.size());
+                    for (PartitionKey partitionKey : partitionKeys.values()) {
+                        jobSchedulers.put(partitionKey, jobSchedulerFactory.createJobScheduler(this, actorContext, DEFAULT_JOB_INSTANCE_ACTOR_NAME + "/" + partitionKey.getName(), partitionKey.getProcessCount(), partitionKey));
+                        partitionKeyMap.put(partitionKey.getName(), partitionKey);
                     }
                 }
                 for (PartitionKey jobTriggerPartitionKey : defaultTriggerPartitionKeys) {
-                    jobSchedulers.put(jobTriggerPartitionKey, jobSchedulerFactory.createJobScheduler(this, actorContext, DEFAULT_JOB_TRIGGER_ACTOR_NAME, DEFAULT_JOB_TRIGGER_PROCESS_COUNT, jobTriggerPartitionKey));
+                    jobSchedulers.put(jobTriggerPartitionKey, jobSchedulerFactory.createJobScheduler(this, actorContext, DEFAULT_JOB_TRIGGER_ACTOR_NAME, jobTriggerPartitionKey.getProcessCount(), jobTriggerPartitionKey));
+                    partitionKeyMap.put(jobTriggerPartitionKey.getName(), jobTriggerPartitionKey);
                 }
 
+                this.partitionKeys = Collections.unmodifiableMap(partitionKeyMap);
                 jobInstanceListeners.addAll(jobTriggerListeners);
                 this.jobInstanceListeners = jobInstanceListeners.toArray(new JobInstanceListener[jobInstanceListeners.size()]);
                 afterConstruct();
@@ -819,6 +898,21 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
             @Override
             public boolean isScheduleRefreshedOnly() {
                 return scheduleRefreshedOnly;
+            }
+
+            @Override
+            public int getTransactionTimeoutMillis() {
+                return transactionTimeoutMillis;
+            }
+
+            @Override
+            public int getTemporaryErrorBackoffSeconds() {
+                return temporaryErrorBackoffSeconds;
+            }
+
+            @Override
+            public int getRateLimitBackoffSeconds() {
+                return rateLimitBackoffSeconds;
             }
 
             @Override
@@ -879,8 +973,8 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
             }
 
             @Override
-            public Collection<PartitionKey> getPartitionKeys() {
-                return Collections.unmodifiableSet(jobSchedulers.keySet());
+            public Map<String, PartitionKey> getPartitionKeys() {
+                return partitionKeys;
             }
 
             @Override
@@ -888,12 +982,46 @@ public interface JobContext extends ServiceProvider, ConfigurationSource {
                 return jobInstanceClassToPartitionKeysMapping.computeIfAbsent(jobInstance.getClass(), (k) -> {
                     List<PartitionKey> v = new ArrayList<>(jobSchedulers.keySet().size());
                     for (PartitionKey partitionKey : jobSchedulers.keySet()) {
-                        if (partitionKey.getJobInstanceType().isAssignableFrom(k)) {
-                            v.add(partitionKey);
+                        for (Class<? extends JobInstance<?>> type : partitionKey.getJobInstanceTypes()) {
+                            if (type.isAssignableFrom(k)) {
+                                v.add(partitionKey);
+                                break;
+                            }
                         }
                     }
                     return v;
                 });
+            }
+
+            @Override
+            public int getClusterPosition(JobInstance<?> jobInstance) {
+                for (PartitionKey partitionKey : getPartitionKeys(jobInstance)) {
+                    int clusterPosition = jobSchedulers.get(partitionKey).getClusterPosition(jobInstance);
+                    if (clusterPosition != -1) {
+                        return clusterPosition;
+                    }
+                }
+
+                return -1;
+            }
+
+            @Override
+            public String getTrace(JobInstance<?> jobInstance) {
+                for (PartitionKey partitionKey : getPartitionKeys(jobInstance)) {
+                    String trace = jobSchedulers.get(partitionKey).getTrace(jobInstance);
+                    if (trace != null) {
+                        return trace;
+                    }
+                }
+
+                return null;
+            }
+
+            @Override
+            public void cancel(JobInstance<?> jobInstance) {
+                for (PartitionKey partitionKey : getPartitionKeys(jobInstance)) {
+                    jobSchedulers.get(partitionKey).cancel(jobInstance);
+                }
             }
 
             @Override
