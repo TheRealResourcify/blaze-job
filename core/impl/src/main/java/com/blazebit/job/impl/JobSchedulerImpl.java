@@ -533,10 +533,13 @@ public class JobSchedulerImpl implements JobScheduler, ClusterStateListener {
                         }
                     }
 
-                    if (jobInstance.getState() != JobInstanceState.DONE) {
+                    // We only mark the job as DONE when it was properly executed before and still has the NEW state
+                    if (jobInstance.getState() == JobInstanceState.NEW) {
                         jobInstance.markDone(jobProcessingContext, lastProcessed);
+                        jobContext.forEachJobInstanceListeners(new JobInstanceSuccessListenerConsumer(jobInstance, jobProcessingContext));
+                    } else if (jobInstance.getState() == JobInstanceState.DONE) {
+                        jobContext.forEachJobInstanceListeners(new JobInstanceSuccessListenerConsumer(jobInstance, jobProcessingContext));
                     }
-                    jobContext.forEachJobInstanceListeners(new JobInstanceSuccessListenerConsumer(jobInstance, jobProcessingContext));
                 } catch (ExecutionException ex) {
                     Throwable t;
                     if (ex.getCause() instanceof CallableThrowable) {
@@ -728,10 +731,13 @@ public class JobSchedulerImpl implements JobScheduler, ClusterStateListener {
                             }
                         }
 
-                        if (jobInstance.getState() != JobInstanceState.DONE) {
+                        // We only mark the job as DONE when it was properly executed before and still has the NEW state
+                        if (jobInstance.getState() == JobInstanceState.NEW) {
                             jobInstance.markDone(jobProcessingContext, lastProcessed);
+                            jobContext.forEachJobInstanceListeners(new JobInstanceSuccessListenerConsumer(jobInstance, jobProcessingContext));
+                        } else if (jobInstance.getState() == JobInstanceState.DONE) {
+                            jobContext.forEachJobInstanceListeners(new JobInstanceSuccessListenerConsumer(jobInstance, jobProcessingContext));
                         }
-                        jobContext.forEachJobInstanceListeners(new JobInstanceSuccessListenerConsumer(jobInstance, jobProcessingContext));
                         return null;
                     } catch (Throwable t) {
                         jobInstance.markFailed(jobProcessingContext, t);

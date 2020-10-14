@@ -72,7 +72,7 @@ public abstract class AbstractJobInstance<ID> implements JobInstance<ID>, IdHold
      *
      * @param state The state
      */
-    abstract void setState(JobInstanceState state);
+    protected abstract void setState(JobInstanceState state);
 
     /**
      * Sets the given defer count.

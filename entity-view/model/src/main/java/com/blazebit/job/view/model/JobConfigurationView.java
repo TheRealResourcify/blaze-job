@@ -20,6 +20,7 @@ import com.blazebit.job.jpa.model.JobConfiguration;
 import com.blazebit.job.jpa.model.ParameterSerializable;
 import com.blazebit.job.jpa.model.TimeFrame;
 import com.blazebit.persistence.view.EntityView;
+import com.blazebit.persistence.view.PostLoad;
 import com.blazebit.persistence.view.PreUpdate;
 
 import java.io.Serializable;
@@ -42,14 +43,23 @@ public abstract class JobConfigurationView implements com.blazebit.job.JobConfig
     
     private static final Serializable EMPTY = new Serializable() { };
 
-    private final DirtyMarkingSet<TimeFrame> executionTimeFrames;
-    private final DirtyMarkingMap<String, Serializable> parameters;
+    private DirtyMarkingSet<TimeFrame> executionTimeFrames;
+    private DirtyMarkingMap<String, Serializable> parameters;
+
+    /**
+     * Post Entity-View load lifecycle listener.
+     */
+    @PostLoad
+    protected void postLoad() {
+        init((ParameterSerializable) getParameterSerializable());
+    }
 
     /**
      * Creates a new job configuration view.
+     *
+     * @param o The serializable parameter
      */
-    public JobConfigurationView() {
-        ParameterSerializable o = (ParameterSerializable) getParameterSerializable();
+    protected void init(ParameterSerializable o) {
         if (o != null && o.getExecutionTimeFrames() != null) {
             this.executionTimeFrames = new DirtyMarkingSet<>(o.getExecutionTimeFrames());
         } else {

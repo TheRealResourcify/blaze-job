@@ -16,25 +16,23 @@
 
 package com.blazebit.job.view.model;
 
-import com.blazebit.persistence.view.IdMapping;
-
 import java.io.Serializable;
 
 /**
- * An entity view holding the id and implementing equals and hashCode based on that.
+ * A simple implementation of {@link JobConfigurationView} that can be overridden.
  *
- * @param <ID> The entity id type or entity view type for the id type
  * @author Christian Beikov
  * @since 1.0.0
  */
-public interface IdHolderView<ID> extends Serializable {
+public abstract class DefaultJobConfigurationView extends JobConfigurationView {
 
-    /**
-     * Returns the id of the entity.
-     *
-     * @return the id of the entity
-     */
-    @IdMapping
-    public ID getId();
+    @Override
+    protected Serializable getParameterSerializable() {
+        return null;
+    }
+
+    @Override
+    protected void setParameterSerializable(Serializable parameterSerializable) {
+    }
 
 }
