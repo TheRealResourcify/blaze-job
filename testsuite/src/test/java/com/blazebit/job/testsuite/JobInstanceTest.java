@@ -485,7 +485,7 @@ public class JobInstanceTest extends AbstractJobTest {
         jobContext.stop(1, TimeUnit.MINUTES);
         assertEquals(JobInstanceState.FAILED, jobInstance.getState());
         assertEquals(0, clusterPosition);
-        assertTrue("Unexpected trace:\n" + trace, trace.contains("java.util.concurrent.CountDownLatch.await"));
+        assertTrue("Unexpected trace:\n" + trace, trace.contains("java.util.concurrent.CountDownLatch"));
     }
 
     @Test
@@ -521,7 +521,7 @@ public class JobInstanceTest extends AbstractJobTest {
         jobContext.stop(1, TimeUnit.MINUTES);
         assertEquals(JobInstanceState.FAILED, jobInstance.getState());
         assertEquals(0, clusterPosition);
-        assertTrue("Unexpected trace:\n" + trace, trace.contains("java.util.concurrent.CountDownLatch.await"));
+        assertTrue("Unexpected trace:\n" + trace, trace.contains("java.util.concurrent.CountDownLatch"));
     }
 
     @Test
