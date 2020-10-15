@@ -20,6 +20,7 @@ import com.blazebit.job.jpa.model.JobConfiguration;
 import com.blazebit.job.jpa.model.ParameterSerializable;
 import com.blazebit.job.jpa.model.TimeFrame;
 import com.blazebit.persistence.view.EntityView;
+import com.blazebit.persistence.view.PostCreate;
 import com.blazebit.persistence.view.PostLoad;
 import com.blazebit.persistence.view.PreUpdate;
 
@@ -47,11 +48,19 @@ public abstract class JobConfigurationView implements com.blazebit.job.JobConfig
     private DirtyMarkingMap<String, Serializable> parameters;
 
     /**
-     * Post Entity-View load lifecycle listener.
+     * Post Entity-View post load lifecycle listener.
      */
     @PostLoad
     protected void postLoad() {
         init((ParameterSerializable) getParameterSerializable());
+    }
+
+    /**
+     * Post Entity-View post create lifecycle listener.
+     */
+    @PostCreate
+    protected void postCreate() {
+        init(null);
     }
 
     /**
