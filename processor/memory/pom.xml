@@ -9,6 +9,10 @@
 
     <artifactId>blaze-job-processor-memory</artifactId>
 
+    <properties>
+        <module.name>com.blazebit.job.processor.memory</module.name>
+    </properties>
+
     <dependencies>
         <dependency>
             <groupId>${project.groupId}</groupId>

@@ -10,6 +10,10 @@
 
     <artifactId>blaze-job-entity-view-model</artifactId>
 
+    <properties>
+        <module.name>com.blazebit.job.view.model</module.name>
+    </properties>
+
     <dependencies>
         <!-- Actually we only need JPA but since there is no official artifact we rather use this than provider specific apis -->
         <dependency>
