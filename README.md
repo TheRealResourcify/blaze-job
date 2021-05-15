@@ -1,4 +1,4 @@
-[![Build Status](https://travis-ci.com/Blazebit/blaze-job.svg?branch=master)](https://travis-ci.org/Blazebit/blaze-job)
+[![Blaze-Job CI](https://github.com/Blazebit/blaze-job/actions/workflows/ci.yaml/badge.svg)](https://github.com/Blazebit/blaze-job/actions/workflows/ci.yaml)
 
 [![Maven Central](https://maven-badges.herokuapp.com/maven-central/com.blazebit/blaze-job-core-api/badge.svg)](https://maven-badges.herokuapp.com/maven-central/com.blazebit/blaze-job-core-api)
 [![Slack Status](https://blazebit.herokuapp.com/badge.svg)](https://blazebit.herokuapp.com)
@@ -38,8 +38,8 @@ Blaze-Job is split up into different modules. We recommend that you define a ver
 
 ```xml
 <properties>
-    <blaze-job.version>1.0.0-Alpha5</blaze-job.version>
-    <blaze-actor.version>1.0.0-Alpha3</blaze-actor.version>
+    <blaze-job.version>1.0.1</blaze-job.version>
+    <blaze-actor.version>1.0.0-Alpha5</blaze-actor.version>
 </properties>
 ```
 
