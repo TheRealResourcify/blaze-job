@@ -19,6 +19,8 @@ import com.blazebit.job.JobContext;
 import com.blazebit.job.spi.TransactionSupport;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
+import org.springframework.transaction.support.TransactionSynchronizationAdapter;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import java.util.ArrayList;
@@ -65,7 +67,6 @@ public class SpringTransactionSupport implements TransactionSupport {
         }
         int index = transactionStack.transactionDefinitions.size();
         transactionStack.transactionDefinitions.add(transactionTemplate);
-        boolean success = true;
         try {
             return transactionTemplate.execute(status -> {
                 try {
@@ -77,7 +78,6 @@ public class SpringTransactionSupport implements TransactionSupport {
                 }
             });
         } catch (Throwable t) {
-            success = false;
             if (t instanceof ThrowableWrapper) {
                 exceptionHandler.accept(t.getCause());
             } else {
@@ -87,11 +87,6 @@ public class SpringTransactionSupport implements TransactionSupport {
         } finally {
             if (root) {
                 transactionStackThreadLocal.remove();
-                if (success) {
-                    for (Runnable postCommitListener : transactionStack.postCommitListeners) {
-                        postCommitListener.run();
-                    }
-                }
             } else {
                 transactionStack.transactionDefinitions.remove(index);
             }
@@ -114,7 +109,6 @@ public class SpringTransactionSupport implements TransactionSupport {
      */
     private static class TransactionStack {
         private final List<TransactionDefinition> transactionDefinitions = new ArrayList<>();
-        private final List<Runnable> postCommitListeners = new ArrayList<>();
     }
 
     private boolean allOk(List<TransactionDefinition> transactionDefinitions) {
@@ -130,10 +124,11 @@ public class SpringTransactionSupport implements TransactionSupport {
 
     @Override
     public void registerPostCommitListener(Runnable o) {
-        TransactionStack transactionStack = transactionStackThreadLocal.get();
-        if (transactionStack == null) {
-            throw new IllegalStateException("No active transaction!");
-        }
-        transactionStack.postCommitListeners.add(o);
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronizationAdapter() {
+            @Override
+            public void afterCommit() {
+                o.run();
+            }
+        });
     }
 }
