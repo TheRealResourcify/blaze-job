@@ -23,6 +23,7 @@
         <version.weld>2.4.5.Final</version.weld>
         <version.spring>5.0.7.RELEASE</version.spring>
         <version.junit>4.12</version.junit>
+        <version.hibernate>5.2.11.Final</version.hibernate>
 
         <version.processor.plugin>3.3.2</version.processor.plugin>
     </properties>
@@ -87,8 +88,6 @@
                 <configuration>
                     <source>${maven.compiler.argument.source}</source>
                     <target>${maven.compiler.argument.target}</target>
-                    <!-- Disable annotation processing via compiler plugin. -->
-                    <compilerArgument>-proc:none</compilerArgument>
                 </configuration>
             </plugin>
             <plugin>

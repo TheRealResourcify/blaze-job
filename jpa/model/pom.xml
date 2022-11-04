@@ -26,6 +26,12 @@
             <artifactId>blaze-job-core-api</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <dependency>
+            <groupId>org.hibernate</groupId>
+            <artifactId>hibernate-jpamodelgen</artifactId>
+            <version>${version.hibernate}</version>
+            <scope>provided</scope>
+        </dependency>
 
         <!-- Test dependencies -->
 		<dependency>
