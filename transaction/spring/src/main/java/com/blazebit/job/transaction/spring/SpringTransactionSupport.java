@@ -1,5 +1,5 @@
 /*
- * Copyright 2018 - 2022 Blazebit.
+ * Copyright 2018 - 2023 Blazebit.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -52,6 +52,7 @@ public class SpringTransactionSupport implements TransactionSupport {
     @Override
     public <T> T transactional(JobContext context, long transactionTimeoutMillis, boolean joinIfPossible, Callable<T> callable, Consumer<Throwable> exceptionHandler) {
         TransactionTemplate transactionTemplate = new TransactionTemplate(tm);
+        transactionTemplate.setName(SpringTransactionSupport.class.getName());
         transactionTemplate.setTimeout((int) TimeUnit.MILLISECONDS.toSeconds(transactionTimeoutMillis));
         TransactionStack transactionStack = transactionStackThreadLocal.get();
         boolean root = false;
@@ -114,6 +115,16 @@ public class SpringTransactionSupport implements TransactionSupport {
     private boolean allOk(List<TransactionDefinition> transactionDefinitions) {
         for (int i = 0; i < transactionDefinitions.size(); i++) {
             TransactionDefinition transactionDefinition = transactionDefinitions.get(i);
+            // We need to be careful how we invoke Spring's PlatformTransactionManager here. Depending on the
+            // propagation behavior of the passed TransactionDefinition, the TM may suspend an ongoing transaction
+            // and start a new one which is not what we want here. In order to prevent that we must only pass
+            // TransactionDefinition with propagation behavior PROPAGATION_REQUIRED as this won't suspend
+            // existing transaction or start new ones.
+            if (transactionDefinition.getPropagationBehavior() != TransactionDefinition.PROPAGATION_REQUIRED) {
+                TransactionTemplate transactionTemplate = new TransactionTemplate(tm, transactionDefinition);
+                transactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRED);
+                transactionDefinition = transactionTemplate;
+            }
             if (tm.getTransaction(transactionDefinition).isRollbackOnly()) {
                 return false;
             }

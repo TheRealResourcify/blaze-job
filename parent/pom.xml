@@ -23,6 +23,7 @@
         <version.weld>2.4.5.Final</version.weld>
         <version.spring>5.0.7.RELEASE</version.spring>
         <version.junit>4.12</version.junit>
+        <version.mockito>4.11.0</version.mockito>
         <version.hibernate>5.2.11.Final</version.hibernate>
 
         <version.processor.plugin>3.3.2</version.processor.plugin>
@@ -43,6 +44,12 @@
                 <groupId>junit</groupId>
                 <artifactId>junit</artifactId>
                 <version>${version.junit}</version>
+                <scope>test</scope>
+            </dependency>
+            <dependency>
+                <groupId>org.mockito</groupId>
+                <artifactId>mockito-core</artifactId>
+                <version>${version.mockito}</version>
                 <scope>test</scope>
             </dependency>
 
