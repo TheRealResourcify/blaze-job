@@ -16,9 +16,8 @@
 
 package com.blazebit.job.jpa.model;
 
-import javax.persistence.MappedSuperclass;
-import javax.persistence.Transient;
 import java.io.Serializable;
+import javax.persistence.Transient;
 
 /**
  * An abstract mapped superclass holding the id and implementing equals and hashCode based on that.
@@ -27,7 +26,6 @@ import java.io.Serializable;
  * @author Christian Beikov
  * @since 1.0.0
  */
-@MappedSuperclass
 public abstract class BaseEntity<ID> implements Serializable {
     private static final long serialVersionUID = 1L;
 
@@ -63,7 +61,6 @@ public abstract class BaseEntity<ID> implements Serializable {
      *
      * @return the id of the entity
      */
-    @Transient
     public abstract ID getId();
 
     /**
